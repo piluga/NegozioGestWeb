@@ -107,18 +107,70 @@
 
         let carrello = []; let clienteAttivo = null; let totaleLordo = 0; let totaleNettoAttuale = 0; let percentualeSconto = 0; let indiceRicercaAttivo = -1; let msgDaInviarePlain = ""; let telClienteAttuale = "";
 
+        // ==========================================
+        // 🔒 CONFIGURAZIONE ACCESSO (LOGIN)
+        // ==========================================
+        const PIN_ACCESSO = "12345"; // Imposta qui il tuo PIN di sicurezza
+
         // AVVIO
         window.onload = async () => {
+            // Legge le impostazioni: se è "false", il PIN non è richiesto
+            let pinRichiesto = localStorage.getItem('impostazioni_pin_attivo') !== 'false';
+
+            // Controlla se la sessione è sbloccata OPPURE se il PIN è stato disabilitato nelle impostazioni
+            if (!pinRichiesto || sessionStorage.getItem('cassa_sbloccata') === 'true') {
+                document.getElementById('modal-login').style.display = 'none';
+                avviaSistemaBase();
+            } else {
+                // Forza la visualizzazione del login
+                document.getElementById('modal-login').style.display = 'flex';
+                setTimeout(() => document.getElementById('login-pin').focus(), 100);
+            }
+
+            document.getElementById('login-pin').addEventListener('keypress', function (e) {
+                if (e.key === 'Enter') sbloccaApp();
+            });
+        };
+
+        // Funzione isolata per avviare i database una volta sbloccata l'app
+        async function avviaSistemaBase() {
             try {
                 await initDB();
                 mostraMessaggio("CASSA PRONTA");
                 campoBarcode.disabled = false;
                 campoScheda.disabled = false;
-                campoBarcode.focus();
+
+                // All'avvio, mostra il menu principale (Launcher)
+                apriModale('modal-menu-principale');
+
             } catch (e) {
                 console.error("Errore inizializzazione DB", e);
                 mostraAvvisoModale("Errore durante l'apertura del Database: " + e);
             }
+        }
+
+        // Verifica del PIN
+        window.sbloccaApp = function () {
+            const inputPin = document.getElementById('login-pin').value;
+
+            if (inputPin === PIN_ACCESSO) {
+                // PIN Corretto: Salva in sessione, nascondi modale e avvia
+                sessionStorage.setItem('cassa_sbloccata', 'true');
+                document.getElementById('modal-login').style.display = 'none';
+                document.getElementById('login-pin').value = '';
+                avviaSistemaBase();
+            } else {
+                // PIN Errato: Usa la modale custom (NESSUN ALERT DI SISTEMA!)
+                mostraAvvisoModale("<b>PIN ERRATO</b><br>Accesso negato al gestionale.");
+                document.getElementById('login-pin').value = '';
+                document.getElementById('login-pin').focus();
+            }
+        };
+
+        // Funzione per bloccare manualmente la cassa
+        window.bloccaCassa = function () {
+            sessionStorage.removeItem('cassa_sbloccata');
+            window.location.reload(); // Ricarica la pagina, forzando la comparsa del login
         };
 
         // FUNZIONI MODALI UNIVERSALI
@@ -294,8 +346,24 @@
                     bonus: clienteAttivo.bonus
                 };
 
-                telClienteAttuale = clienteAttivo.telefono; msgDaInviarePlain = `Ciao ${clienteAttivo.nome}!\nGrazie per i tuoi acquisti.\nIl tuo saldo aggiornato è di ${clienteAttivo.punti.toLocaleString('it-IT', { maximumFractionDigits: 2 })} Punti.`; if (clienteAttivo.bonus > 0) { msgDaInviarePlain += `\nHai sbloccato un BUONO SCONTO di ${clienteAttivo.bonus}€ da usare quando vuoi! 🎁`; }
-                document.getElementById('box-notifiche').style.display = 'block'; let btnApp = document.getElementById('btn-invia-app'); btnApp.innerHTML = '📱 Notifica App'; btnApp.classList.remove('inviato');
+                telClienteAttuale = clienteAttivo.telefono;
+
+                // Leggi il template dalle impostazioni
+                let templateMsg = localStorage.getItem('impostazioni_msg_template') || MSG_BASE_DEFAULT;
+
+                // Formatta i valori e sostituisci le variabili
+                let strPunti = clienteAttivo.punti.toLocaleString('it-IT', { maximumFractionDigits: 2 });
+                let strBonus = clienteAttivo.bonus.toLocaleString('it-IT', { minimumFractionDigits: 2 });
+
+                msgDaInviarePlain = templateMsg
+                    .replace(/{NOME}/g, clienteAttivo.nome)
+                    .replace(/{PUNTI}/g, strPunti)
+                    .replace(/{BONUS}/g, strBonus);
+
+                document.getElementById('box-notifiche').style.display = 'block';
+                let btnApp = document.getElementById('btn-invia-app');
+                btnApp.innerHTML = '📱 Notifica App';
+                btnApp.classList.remove('inviato');
             } else { messaggioEsito = "Scontrino emesso per cliente non registrato."; document.getElementById('box-notifiche').style.display = 'none'; }
 
             let d = new Date(); let hh = String(d.getHours()).padStart(2, '0'); let min = String(d.getMinutes()).padStart(2, '0');
@@ -1211,6 +1279,7 @@
                     document.getElementById('btn-magazzino').click();
                     break;
                 case 'SETUP': // 🌟 NUOVO COLLEGAMENTO
+                    caricaImpostazioniAvanzate();
                     apriModale('modal-impostazioni');
                     break;
             }
@@ -1559,6 +1628,44 @@
             setTimeout(() => {
                 window.location.reload();
             }, 3000);
+        };
+
+        // 4. Salvataggio Impostazioni Personalizzate
+        const MSG_BASE_DEFAULT = "Ciao {NOME}!\nGrazie per i tuoi acquisti.\nIl tuo saldo aggiornato è di {PUNTI} Punti.\nHai a disposizione un BONUS di {BONUS}€ da usare quando vuoi! 🎁";
+
+        window.caricaImpostazioniAvanzate = function () {
+            // Carica PIN e Messaggio App
+            let pinAttivo = localStorage.getItem('impostazioni_pin_attivo');
+            document.getElementById('impostazioni-pin-toggle').checked = (pinAttivo !== 'false');
+
+            let msgSalvato = localStorage.getItem('impostazioni_msg_template');
+            if (!msgSalvato) msgSalvato = MSG_BASE_DEFAULT;
+            document.getElementById('impostazioni-msg-template').value = msgSalvato;
+
+            // Carica Dati Scontrino
+            document.getElementById('imp-stampa-nome').value = localStorage.getItem('imp_stampa_nome') || "";
+            document.getElementById('imp-stampa-indirizzo').value = localStorage.getItem('imp_stampa_indirizzo') || "";
+            document.getElementById('imp-stampa-piva').value = localStorage.getItem('imp_stampa_piva') || "";
+            document.getElementById('imp-stampa-footer').value = localStorage.getItem('imp_stampa_footer') || "Grazie e Arrivederci!";
+        };
+
+        window.salvaImpostazioniAvanzate = function () {
+            // Salva PIN e Messaggio
+            let pinAttivo = document.getElementById('impostazioni-pin-toggle').checked;
+            let msg = document.getElementById('impostazioni-msg-template').value.trim();
+            if (msg === "") msg = MSG_BASE_DEFAULT;
+
+            localStorage.setItem('impostazioni_pin_attivo', pinAttivo ? 'true' : 'false');
+            localStorage.setItem('impostazioni_msg_template', msg);
+
+            // Salva Dati Scontrino
+            localStorage.setItem('imp_stampa_nome', document.getElementById('imp-stampa-nome').value.trim());
+            localStorage.setItem('imp_stampa_indirizzo', document.getElementById('imp-stampa-indirizzo').value.trim());
+            localStorage.setItem('imp_stampa_piva', document.getElementById('imp-stampa-piva').value.trim());
+            localStorage.setItem('imp_stampa_footer', document.getElementById('imp-stampa-footer').value.trim());
+
+            // Usa rigorosamente la modale, mai l'alert
+            mostraAvvisoModale("Impostazioni salvate con successo!");
         };
 
         // Modifica il tasto "ESCI" della cassa (prima icona in alto a sx)
