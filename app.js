@@ -413,6 +413,10 @@
             };
 
             await salvaVendita(recordVendita);
+
+            // 🔥 TRASMISSIONE AL CRUSCOTTO DIREZIONALE
+            inviaVenditaLive(recordVendita);
+
             document.getElementById('msg-esito-punti').innerHTML = messaggioEsito;
             apriModale('modal-esito');
         };
@@ -666,6 +670,10 @@
 
                     // 3. Eliminazione scontrino e aggiornamento visivo
                     await deleteRecord('vendite', idDaEliminare);
+
+                    // 🔥 RIMUOVE L'INCASSO DAL CRUSCOTTO DIREZIONALE
+                    eliminaVenditaLive(scontrino.GIORNO, idDaEliminare);
+
                     await popolaRegistroCassa(); // Ricarica il registro di cassa pulito
                     mostraMessaggio("SCONTRINO ANNULLATO CON SUCCESSO");
                 }
@@ -1381,8 +1389,9 @@
         // Memoria per il cambio giorno automatico
         let dataCorrenteSistema = getOggiString();
 
-        // 0. Gestione Spia Wi-Fi (Online/Offline)
+        // 0. Gestione Spia Wi-Fi (Online/Offline) e Stato Menu
         window.aggiornaStatoRete = function() {
+            // Aggiorna la spia in alto a sinistra nella Cassa
             if (sysWifi) {
                 if (navigator.onLine) {
                     sysWifi.innerHTML = '🟢 ONLINE';
@@ -1390,6 +1399,16 @@
                 } else {
                     sysWifi.innerHTML = '🔴 OFFLINE';
                     sysWifi.style.color = '#ff4d4d';
+                }
+            }
+
+            // Aggiorna la scritta in fondo al Menu Principale
+            let menuStatus = document.getElementById('menu-status-web');
+            if (menuStatus) {
+                if (navigator.onLine) {
+                    menuStatus.innerHTML = '<span style="color: #00cc66; font-weight: bold;">Collegato 🟢</span>';
+                } else {
+                    menuStatus.innerHTML = '<span style="color: #ff4d4d; font-weight: bold;">Scollegato 🔴</span>';
                 }
             }
         };
@@ -2265,6 +2284,77 @@
             });
             if(htmlProdotti === "") htmlProdotti = "<div style='color:#8888bb; padding: 15px;'>Nessun prodotto venduto nel periodo selezionato.</div>";
             document.getElementById('stat-lista-prodotti').innerHTML = htmlProdotti;
+        };
+
+        // ==========================================
+        // 📡 TRASMISSIONE LIVE AL CRUSCOTTO REMOTO (VERSIONE REST API)
+        // ==========================================
+        window.inviaVenditaLive = async function(record) {
+            if (!navigator.onLine) {
+                console.warn("Trasmissione ignorata: sei Offline.");
+                return; 
+            }
+
+            // Controllo di sicurezza sui dati
+            if (!record.GIORNO || !record.id) {
+                console.error("Errore: Manca la data o l'ID nello scontrino!", record);
+                return;
+            }
+
+            let nodoGiorno = record.GIORNO; 
+            let totaleScontrino = record.CONTANTI + record.POS;
+
+            // Il pacchetto leggero per il cruscotto
+            let payload = {
+                id: record.id,
+                ora: record.ORA,
+                operatore: record.OPERATORE || "Sconosciuto",
+                totale: totaleScontrino,
+                contanti: record.CONTANTI,
+                pos: record.POS
+            };
+
+            // Costruiamo l'indirizzo esatto in cui salvare il dato (aggiungendo .json alla fine)
+            const url = `${FIREBASE_URL}/vendite_live/${nodoGiorno}/${record.id}.json`;
+
+            try {
+                // Usiamo PUT per inserire il dato esattamente in quel percorso con quell'ID
+                let response = await fetch(url, {
+                    method: 'PUT', 
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (response.ok) {
+                    console.log(`✅ TRASMISSIONE FIREBASE RIUSCITA: Incasso inviato al cloud!`);
+                } else {
+                    console.error("❌ ERRORE FIREBASE (Permessi o Rete):", response.status);
+                }
+            } catch (e) {
+                console.error("❌ ERRORE FIREBASE (Connessione fallita):", e);
+            }
+        };
+
+        window.eliminaVenditaLive = async function(giorno, idVendita) {
+            if (!navigator.onLine) return;
+            
+            // Indirizzo del dato da eliminare
+            const url = `${FIREBASE_URL}/vendite_live/${giorno}/${idVendita}.json`;
+
+            try {
+                // Usiamo DELETE per rimuovere fisicamente il nodo
+                let response = await fetch(url, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    console.log(`✅ ELIMINAZIONE FIREBASE RIUSCITA: Incasso stornato dal cloud!`);
+                } else {
+                    console.error("❌ ERRORE FIREBASE HTTP:", response.status);
+                }
+            } catch (e) {
+                console.error("❌ ERRORE FIREBASE (Eliminazione fallita):", e);
+            }
         };
 
         // ==========================================
