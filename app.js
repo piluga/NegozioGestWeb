@@ -1381,6 +1381,24 @@
         // Memoria per il cambio giorno automatico
         let dataCorrenteSistema = getOggiString();
 
+        // 0. Gestione Spia Wi-Fi (Online/Offline)
+        window.aggiornaStatoRete = function() {
+            if (sysWifi) {
+                if (navigator.onLine) {
+                    sysWifi.innerHTML = '🟢 ONLINE';
+                    sysWifi.style.color = '#00cc66';
+                } else {
+                    sysWifi.innerHTML = '🔴 OFFLINE';
+                    sysWifi.style.color = '#ff4d4d';
+                }
+            }
+        };
+
+        // Ascolta i cambiamenti di connessione in tempo reale
+        window.addEventListener('online', aggiornaStatoRete);
+        window.addEventListener('offline', aggiornaStatoRete);
+        aggiornaStatoRete(); // Controlla subito all'avvio
+
         // 1. Gestione Orologio, Data e AZZERAMENTO MEZZANOTTE
         function aggiornaOrologio() {
             const adesso = new Date();
