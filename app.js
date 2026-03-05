@@ -70,6 +70,7 @@
         function deleteRecord(storeName, key) { return new Promise((resolve) => { let tx = db.transaction(storeName, 'readwrite'); tx.objectStore(storeName).delete(key); tx.oncomplete = () => resolve(); }); }
         function salvaVendita(recordVendita) { return new Promise((resolve) => { let tx = db.transaction('vendite', 'readwrite'); tx.objectStore('vendite').add(recordVendita); tx.oncomplete = () => resolve(); }); }
         function salvaMovimentoCassaDB(movimento) { return new Promise((resolve) => { let tx = db.transaction('movimenti_cassa', 'readwrite'); tx.objectStore('movimenti_cassa').add(movimento); tx.oncomplete = () => resolve(); }); }
+        function getRecordById(storeName, id) { return new Promise((resolve) => { let tx = db.transaction(storeName, 'readonly'); let request = tx.objectStore(storeName).get(id); request.onsuccess = () => resolve(request.result); }); }
 
         // Helper Data
         function getOggiString() {
@@ -351,25 +352,69 @@
                 // Leggi il template dalle impostazioni
                 let templateMsg = localStorage.getItem('impostazioni_msg_template') || MSG_BASE_DEFAULT;
 
-                // Formatta i valori e sostituisci le variabili
-                let strPunti = clienteAttivo.punti.toLocaleString('it-IT', { maximumFractionDigits: 2 });
-                let strBonus = clienteAttivo.bonus.toLocaleString('it-IT', { minimumFractionDigits: 2 });
+                // 1. Formatta tutti i valori numerici con 2 decimali fissi (es. 75,00)
+                let strSaldoIniziale = saldoIniziale.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                let strPuntiCaricati = puntiAcquisiti.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                let strPuntiScaricati = puntiSpesi.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                let strPuntiFinale = clienteAttivo.punti.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                let strBonus = clienteAttivo.bonus.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+                // 2. Calcola Data e Ora correnti
+                let dataOggiTs = new Date();
+                let strData = `${String(dataOggiTs.getDate()).padStart(2, '0')}/${String(dataOggiTs.getMonth() + 1).padStart(2, '0')}/${dataOggiTs.getFullYear()}`;
+                let strOra = `${String(dataOggiTs.getHours()).padStart(2, '0')}:${String(dataOggiTs.getMinutes()).padStart(2, '0')}:${String(dataOggiTs.getSeconds()).padStart(2, '0')}`;
+
+                // 3. Sostituisci tutte le variabili nel template
                 msgDaInviarePlain = templateMsg
                     .replace(/{NOME}/g, clienteAttivo.nome)
-                    .replace(/{PUNTI}/g, strPunti)
-                    .replace(/{BONUS}/g, strBonus);
+                    .replace(/{SCHEDA}/g, clienteAttivo.scheda)
+                    .replace(/{SALDO_INIZIALE}/g, strSaldoIniziale)
+                    .replace(/{PUNTI_CARICATI}/g, strPuntiCaricati)
+                    .replace(/{PUNTI_SCARICATI}/g, strPuntiScaricati)
+                    .replace(/{PUNTI}/g, strPuntiFinale)
+                    .replace(/{BONUS}/g, strBonus)
+                    .replace(/{DATA}/g, strData)
+                    .replace(/{ORA}/g, strOra);
 
                 document.getElementById('box-notifiche').style.display = 'block';
                 let btnApp = document.getElementById('btn-invia-app');
                 btnApp.innerHTML = '📱 Notifica App';
                 btnApp.classList.remove('inviato');
-            } else { messaggioEsito = "Scontrino emesso per cliente non registrato."; document.getElementById('box-notifiche').style.display = 'none'; }
+            } else {
+                messaggioEsito = "Scontrino emesso per cliente non registrato.";
+                document.getElementById('box-notifiche').style.display = 'none';
+            }
 
             let d = new Date(); let hh = String(d.getHours()).padStart(2, '0'); let min = String(d.getMinutes()).padStart(2, '0');
-            let recordVendita = { CLIENTE: clienteAttivo ? clienteAttivo.nome : "Nessuno", GIORNO: dataDiOggiStr, ORA: `${hh}:${min}`, CONTANTI: tipoPagamento.toUpperCase() === "CONTANTI" ? pagato : 0, POS: tipoPagamento.toUpperCase() === "POS" ? pagato : 0, PUNTI_CARICATI: puntiAcquisiti, PUNTI_SCARICATI: puntiSpesi, BONUS: bonusUsato, SALDO_PUNTI_INIZIALE: saldoIniziale, SALDO_PUNTI_FINALE: saldoFinale, ARTICOLI: carrello.map(item => ({ CODICE: item.codice, ARTICOLO: item.descrizione, DESCRIZIONE: item.descrizione, TIPO: item.tipo || "PZ", IMPORTO: item.prezzo * item.qta, QUANTITA: item.qta, CATEGORIA: item.categoria })) };
 
-            await salvaVendita(recordVendita); document.getElementById('msg-esito-punti').innerHTML = messaggioEsito; apriModale('modal-esito');
+            // 🌟 QUI AVVIENE LA MODIFICA: Inserimento del parametro OPERATORE
+            let recordVendita = {
+                id: Date.now(),
+                CLIENTE: clienteAttivo ? clienteAttivo.nome : "Nessuno",
+                OPERATORE: operatoreAttivo,
+                GIORNO: dataDiOggiStr,
+                ORA: `${hh}:${min}`,
+                CONTANTI: tipoPagamento.toUpperCase() === "CONTANTI" ? pagato : 0,
+                POS: tipoPagamento.toUpperCase() === "POS" ? pagato : 0,
+                PUNTI_CARICATI: puntiAcquisiti,
+                PUNTI_SCARICATI: puntiSpesi,
+                BONUS: bonusUsato,
+                SALDO_PUNTI_INIZIALE: saldoIniziale,
+                SALDO_PUNTI_FINALE: saldoFinale,
+                ARTICOLI: carrello.map(item => ({
+                    CODICE: item.codice,
+                    ARTICOLO: item.descrizione,
+                    DESCRIZIONE: item.descrizione,
+                    TIPO: item.tipo || "PZ",
+                    IMPORTO: item.prezzo * item.qta,
+                    QUANTITA: item.qta,
+                    CATEGORIA: item.categoria
+                }))
+            };
+
+            await salvaVendita(recordVendita);
+            document.getElementById('msg-esito-punti').innerHTML = messaggioEsito;
+            apriModale('modal-esito');
         };
 
         window.inviaWhatsApp = function () { 
@@ -521,14 +566,17 @@
 
         window.confermaEliminazioneCliente = function () { let scheda = inputCrmScheda.value.trim(); if (scheda === '') return; apriModale('modal-conferma-elimina'); };
 
-        // Sistema Universale di Eliminazione (Niente Alert di sistema!)
+        // ============================================
+        // 🗑️ SISTEMA UNIVERSALE ELIMINAZIONE / STORNO
+        // ============================================
         let idDaEliminare = "";
-        let tipoEliminazione = ""; // Può essere 'CLIENTE' o 'PRODOTTO'
+        let tipoEliminazione = ""; // 'CLIENTE', 'PRODOTTO', o 'SCONTRINO'
 
         window.confermaEliminazioneCliente = function () {
             idDaEliminare = document.getElementById('crm-codice').value.trim();
             tipoEliminazione = 'CLIENTE';
             if (idDaEliminare === '') return;
+            document.getElementById('msg-conferma-elimina').innerHTML = "Sei sicuro di voler ELIMINARE DEFINITIVAMENTE questo cliente?";
             apriModale('modal-conferma-elimina');
         };
 
@@ -536,21 +584,95 @@
             idDaEliminare = document.getElementById('mag-codice').value.trim();
             tipoEliminazione = 'PRODOTTO';
             if (idDaEliminare === '') return;
+            document.getElementById('msg-conferma-elimina').innerHTML = "Sei sicuro di voler ELIMINARE DEFINITIVAMENTE questo articolo dal magazzino?";
             apriModale('modal-conferma-elimina');
         };
 
+        window.confermaAnnullamentoScontrino = function(idScontrino) {
+            idDaEliminare = idScontrino;
+            tipoEliminazione = 'SCONTRINO';
+            document.getElementById('msg-conferma-elimina').innerHTML = "Sei sicuro di voler <b>ANNULLARE</b> questo scontrino?<br><br><span style='color:#b3d9ff;'>I prodotti verranno reinseriti in magazzino e i punti stornati dalla scheda del cliente.</span>";
+            apriModale('modal-conferma-elimina');
+        };
+
+        window.confermaAnnullamentoMovimento = function(idMovimento, tipo) {
+            idDaEliminare = idMovimento;
+            tipoEliminazione = 'MOVIMENTO';
+            let nomeOperazione = tipo === 'ENTRATA' ? 'questo INCASSO EXTRA' : 'questa SPESA';
+            document.getElementById('msg-conferma-elimina').innerHTML = `Sei sicuro di voler <b>ELIMINARE</b> ${nomeOperazione} dal registro di cassa?`;
+            apriModale('modal-conferma-elimina');
+        };
+
+        // Funzione isolata per gestire il ricarico nel database IndexedDB
+        function ripristinaGiacenzeMagazzino(articoli) {
+            return new Promise((resolve) => {
+                let txMag = db.transaction('magazzino', 'readwrite');
+                let storeMag = txMag.objectStore('magazzino');
+                articoli.forEach(art => {
+                    if(art.CODICE !== 'PUNTI') { // Ignora i movimenti manuali dei punti
+                        let req = storeMag.get(art.CODICE);
+                        req.onsuccess = function() {
+                            if(req.result) {
+                                req.result.giacenza += art.QUANTITA;
+                                storeMag.put(req.result);
+                            }
+                        }
+                    }
+                });
+                txMag.oncomplete = () => resolve();
+            });
+        }
+
         window.eseguiEliminazioneUniversale = async function () {
             chiudiModale('modal-conferma-elimina');
+            
             if (tipoEliminazione === 'CLIENTE') {
                 await deleteRecord('clienti', idDaEliminare);
                 crmNuovoCliente();
                 await crmCaricaLista();
                 mostraMessaggio("CLIENTE ELIMINATO");
+            
             } else if (tipoEliminazione === 'PRODOTTO') {
                 await deleteRecord('magazzino', idDaEliminare);
                 magNuovoProdotto();
                 await magCaricaLista();
                 mostraMessaggio("PRODOTTO ELIMINATO");
+            
+            } else if (tipoEliminazione === 'SCONTRINO') {
+                let scontrino = await getRecordById('vendite', idDaEliminare);
+                
+                if(scontrino) {
+                    // 1. Rollback Magazzino
+                    if(scontrino.ARTICOLI && scontrino.ARTICOLI.length > 0) {
+                        await ripristinaGiacenzeMagazzino(scontrino.ARTICOLI);
+                    }
+
+                    // 2. Rollback Cliente
+                    if(scontrino.CLIENTE !== "Nessuno") {
+                        let tuttiClienti = await getAll('clienti');
+                        // Cerca il cliente tramite il nome esatto salvato nello scontrino
+                        let cliente = tuttiClienti.find(c => c.nome === scontrino.CLIENTE);
+                        
+                        if(cliente) {
+                            cliente.punti -= (scontrino.PUNTI_CARICATI || 0);
+                            cliente.punti += (scontrino.PUNTI_SCARICATI || 0); // Restituisce i punti spesi per il bonus!
+                            cliente.bonus = Math.floor(cliente.punti / 100) * 10;
+                            await updateCliente(cliente);
+                            
+                            // Aggiorna in tempo reale anche Firebase
+                            aggiornaFidelityFirebase(cliente.scheda, cliente.punti, getOggiString());
+                        }
+                    }
+
+                    // 3. Eliminazione scontrino e aggiornamento visivo
+                    await deleteRecord('vendite', idDaEliminare);
+                    await popolaRegistroCassa(); // Ricarica il registro di cassa pulito
+                    mostraMessaggio("SCONTRINO ANNULLATO CON SUCCESSO");
+                }
+            } else if (tipoEliminazione === 'MOVIMENTO') {
+                await deleteRecord('movimenti_cassa', idDaEliminare);
+                await popolaRegistroCassa(); // Ricarica il registro aggiornando i totali
+                mostraMessaggio("MOVIMENTO ELIMINATO CON SUCCESSO");
             }
         };
 
@@ -562,8 +684,43 @@
             let venditeOggi = await getByDate('vendite', 'giorno', dataDiOggiStr); let movimentiOggi = await getByDate('movimenti_cassa', 'data', dataDiOggiStr);
             let totPOS = 0; let totContantiVendite = 0; let totEntrateExtra = 0; let totUscite = 0; let numeroScontrini = venditeOggi.length; let listaHtml = "";
 
-            venditeOggi.forEach(v => { totPOS += v.POS; totContantiVendite += v.CONTANTI; let totScontrino = v.POS + v.CONTANTI; listaHtml += `<div class="reg-item vendita"><div class="reg-item-ora">${v.ORA}</div><div class="reg-item-desc">Scontrino ${v.CLIENTE !== "Nessuno" ? " - " + v.CLIENTE : ""}</div><div class="reg-item-val" style="color:#4d88ff;">+ € ${totScontrino.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div></div>`; });
-            movimentiOggi.forEach(m => { if (m.tipo === 'ENTRATA') { totEntrateExtra += m.importo; listaHtml += `<div class="reg-item entrata"><div class="reg-item-ora">${m.ora}</div><div class="reg-item-desc">${m.descrizione}</div><div class="reg-item-val verde">+ € ${m.importo.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div></div>`; } else if (m.tipo === 'USCITA') { totUscite += m.importo; listaHtml += `<div class="reg-item uscita"><div class="reg-item-ora">${m.ora}</div><div class="reg-item-desc">${m.descrizione}</div><div class="reg-item-val rosso">- € ${m.importo.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div></div>`; } });
+            venditeOggi.forEach(v => {
+                totPOS += v.POS;
+                totContantiVendite += v.CONTANTI;
+                let totScontrino = v.POS + v.CONTANTI;
+
+                listaHtml += `
+                    <div class="reg-item vendita" style="align-items: center;">
+                        <div class="reg-item-ora">${v.ORA}</div>
+                        <div class="reg-item-desc">Scontrino ${v.CLIENTE !== "Nessuno" ? " - " + v.CLIENTE : ""}</div>
+                        <div class="reg-item-val" style="color:#4d88ff; margin-right: 15px;">+ € ${totScontrino.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                        <div style="display: flex; gap: 8px;">
+                            <button onclick="visualizzaScontrinoDaRegistro(${v.id})" style="background: rgba(77,136,255,0.2); border: 1px solid #4d88ff; color: #b3d9ff; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 1.6vh;" title="Vedi Dettaglio">👁️</button>
+                            <button onclick="confermaAnnullamentoScontrino(${v.id})" style="background: rgba(255,77,77,0.2); border: 1px solid #ff4d4d; color: #ff4d4d; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 1.6vh;" title="Annulla Scontrino">❌</button>
+                        </div>
+                    </div>`;
+            });
+            movimentiOggi.forEach(m => {
+                if (m.tipo === 'ENTRATA') {
+                    totEntrateExtra += m.importo;
+                    listaHtml += `
+                        <div class="reg-item entrata" style="align-items: center;">
+                            <div class="reg-item-ora">${m.ora}</div>
+                            <div class="reg-item-desc">${m.descrizione}</div>
+                            <div class="reg-item-val verde" style="margin-right: 15px;">+ € ${m.importo.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                            <button onclick="confermaAnnullamentoMovimento(${m.id}, 'ENTRATA')" style="background: rgba(255,77,77,0.2); border: 1px solid #ff4d4d; color: #ff4d4d; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 1.6vh;" title="Elimina Entrata">❌</button>
+                        </div>`;
+                } else if (m.tipo === 'USCITA') {
+                    totUscite += m.importo;
+                    listaHtml += `
+                        <div class="reg-item uscita" style="align-items: center;">
+                            <div class="reg-item-ora">${m.ora}</div>
+                            <div class="reg-item-desc">${m.descrizione}</div>
+                            <div class="reg-item-val rosso" style="margin-right: 15px;">- € ${m.importo.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                            <button onclick="confermaAnnullamentoMovimento(${m.id}, 'USCITA')" style="background: rgba(255,77,77,0.2); border: 1px solid #ff4d4d; color: #ff4d4d; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 1.6vh;" title="Elimina Spesa">❌</button>
+                        </div>`;
+                }
+            });
 
             let saldoCassetto = totContantiVendite + totEntrateExtra - totUscite;
             document.getElementById('reg-num-scontrini').textContent = numeroScontrini; document.getElementById('reg-tot-pos').textContent = "€ " + totPOS.toLocaleString('it-IT', { minimumFractionDigits: 2 }); document.getElementById('reg-tot-contanti').textContent = "€ " + totContantiVendite.toLocaleString('it-IT', { minimumFractionDigits: 2 }); document.getElementById('reg-tot-entrate').textContent = "€ " + totEntrateExtra.toLocaleString('it-IT', { minimumFractionDigits: 2 }); document.getElementById('reg-tot-uscite').textContent = "€ " + totUscite.toLocaleString('it-IT', { minimumFractionDigits: 2 }); document.getElementById('reg-saldo-cassetto').textContent = "€ " + saldoCassetto.toLocaleString('it-IT', { minimumFractionDigits: 2 });
@@ -912,6 +1069,13 @@
         }
 
         // 🌟 APERTURA DETTAGLIO SCONTRINO (Lettura array ARTICOLI)
+        // Funzione ponte per aprire il dettaglio direttamente dal Registro Giornaliero
+        window.visualizzaScontrinoDaRegistro = async function(idScontrino) {
+            let scontrino = await getRecordById('vendite', idScontrino);
+            if (scontrino) {
+                apriDettaglioScontrino(scontrino);
+            }
+        };
         window.apriDettaglioScontrino = function (venditaRaw) {
             let dataIT = venditaRaw.GIORNO.split('-').reverse().join('/');
             document.getElementById('det-dataora').textContent = `${dataIT} - Ore ${venditaRaw.ORA}`;
@@ -1206,15 +1370,18 @@
             document.getElementById('stat-dettaglio-cliente').style.display = 'flex';
         };
 
-        // ==========================================
-        // 🌐 LOGICA DI SISTEMA (WIFI, OROLOGIO, DATA)
-        // ==========================================
+        // ============================================================
+        // 🌐 LOGICA DI SISTEMA E CAMBIO GIORNO (WIFI, OROLOGIO, DATA)
+        // ============================================================
 
         const sysWifi = document.getElementById('sys-wifi');
         const sysOrologio = document.getElementById('sys-orologio');
         const sysData = document.getElementById('sys-data');
 
-        // 1. Gestione Orologio e Data
+        // Memoria per il cambio giorno automatico
+        let dataCorrenteSistema = getOggiString();
+
+        // 1. Gestione Orologio, Data e AZZERAMENTO MEZZANOTTE
         function aggiornaOrologio() {
             const adesso = new Date();
 
@@ -1229,61 +1396,100 @@
             const mese = String(adesso.getMonth() + 1).padStart(2, '0');
             const anno = adesso.getFullYear();
             if (sysData) sysData.textContent = `${gg}/${mese}/${anno}`;
+
+            // 🌟 SENTINELLA DI MEZZANOTTE: Azzera tutto al cambio giorno
+            let nuovaData = `${anno}-${mese}-${gg}`;
+            if (nuovaData !== dataCorrenteSistema) {
+                dataCorrenteSistema = nuovaData; // Aggiorna la memoria al nuovo giorno
+
+                // 1. Svuota la cassa e annulla scontrini in sospeso
+                if (btnCestino) btnCestino.click();
+
+                // 2. Chiude forzatamente qualsiasi finestra/registro aperto di ieri
+                document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
+
+                // 3. Mostra l'avviso con la modale custom (nessun alert di sistema!)
+                mostraAvvisoModale("🌙 <b>CAMBIO GIORNO EFFETTUATO</b><br><br>È scattata la mezzanotte.<br>Il registro di cassa è stato azzerato ed è pronto per un nuovo foglio pulito.");
+                
+                // 4. Riporta l'operatore al menu principale per iniziare la giornata
+                apriModale('modal-menu-principale');
+            }
         }
 
         // Aggiorna l'orologio ogni secondo
         setInterval(aggiornaOrologio, 1000);
         aggiornaOrologio(); // Avvio immediato
 
-        // 2. Gestione Stato Rete (Online/Offline)
-        function aggiornaStatoRete() {
-            if (navigator.onLine) {
-                sysWifi.textContent = '🟢 ONLINE';
-                sysWifi.className = 'wifi-online';
-            } else {
-                sysWifi.textContent = '🔴 OFFLINE (Salvataggio in locale)';
-                sysWifi.className = 'wifi-offline';
-                mostraAvvisoModale("Connessione Internet persa. L'app continuerà a funzionare offline e salverà i dati in locale.");
-            }
-        }
+        // ====================================================
+        // 🏠 LOGICA MENU PRINCIPALE E NAVIGAZIONE INTELLIGENTE
+        // ====================================================
+        
+        // Variabile di memoria per capire da dove arriviamo
+        let apertoDaMenu = false;
 
-        // ==========================================
-        // 🏠 LOGICA MENU PRINCIPALE (LAUNCHER)
-        // ==========================================
+        // Intercetta i click sui bottoni fisici in alto della Cassa
+        // Se l'utente clicca un bottone dalla Cassa, la provenienza "Menu" si cancella
+        document.querySelectorAll('.sezione-tasti .tasto-fisico').forEach(btn => {
+            btn.addEventListener('click', () => {
+                apertoDaMenu = false; 
+            });
+        });
+
+        // Nuova funzione intelligente per la chiusura dei moduli
+        window.chiudiModulo = function(idModal) {
+            chiudiModale(idModal); // Chiude visivamente la finestra
+            
+            // Se eravamo partiti dal menu, lo riapriamo automaticamente
+            if (apertoDaMenu) {
+                apriModale('modal-menu-principale');
+            }
+        };
 
         // Funzione chiamata dai pulsanti del Menu di Avvio
-        function avviaFunzione(tipo) {
-            // Chiude sempre il menu principale
-            chiudiModale('modal-menu-principale');
+        window.avviaFunzione = function(tipo) {
+            chiudiModale('modal-menu-principale'); // Nasconde il menu
 
             switch (tipo) {
                 case 'CASSA':
+                    apertoDaMenu = false; // Azzera la memoria
                     mostraMessaggio("MODALITÀ CASSA ATTIVA");
                     break;
                 case 'CLIENTI':
                     document.getElementById('btn-clienti').click();
+                    apertoDaMenu = true; // Registra la memoria DOPO il click
                     break;
                 case 'CALENDARIO':
                     document.getElementById('btn-calendario').click();
+                    apertoDaMenu = true; 
                     break;
                 case 'CONTABILITA':
                     document.getElementById('btn-contabilita').click();
+                    apertoDaMenu = true; 
                     break;
                 case 'PUNTI':
                     document.getElementById('btn-preferiti').click();
+                    apertoDaMenu = true; 
                     break;
                 case 'CHIUSURA':
                     document.getElementById('btn-registro').click();
+                    apertoDaMenu = true; 
                     break;
                 case 'MAGAZZINO':
                     document.getElementById('btn-magazzino').click();
+                    apertoDaMenu = true; 
                     break;
-                case 'SETUP': // 🌟 NUOVO COLLEGAMENTO
+                case 'SETUP': 
                     caricaImpostazioniAvanzate();
                     apriModale('modal-impostazioni');
+                    apertoDaMenu = true; 
+                    break;
+                case 'STATISTICHE':
+                    calcolaStatistiche(); // Calcola i dati prima di aprire
+                    apriModale('modal-statistiche');
+                    apertoDaMenu = true;
                     break;
             }
-        }
+        };
 
         // ==========================================
         // 📦 LOGICA GESTIONE MAGAZZINO
@@ -1630,8 +1836,138 @@
             }, 3000);
         };
 
-        // 4. Salvataggio Impostazioni Personalizzate
-        const MSG_BASE_DEFAULT = "Ciao {NOME}!\nGrazie per i tuoi acquisti.\nIl tuo saldo aggiornato è di {PUNTI} Punti.\nHai a disposizione un BONUS di {BONUS}€ da usare quando vuoi! 🎁";
+        // 4. Importazione dati da CSV (Excel salvato come CSV)
+        window.gestisciImportazioneCSV = function(event, tabella) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                const text = e.target.result;
+                // Dividi il testo in righe
+                const righe = text.split('\n').filter(riga => riga.trim() !== '');
+                
+                if (righe.length <= 1) {
+                    mostraAvvisoModale("Il file CSV sembra vuoto o manca delle intestazioni.");
+                    event.target.value = ''; // Resetta l'input
+                    return;
+                }
+
+                // Trova il separatore (di solito la virgola o il punto e virgola)
+                const separatore = righe[0].includes(';') ? ';' : ',';
+                // Pulisce le intestazioni della prima riga per riconoscerle
+                const intestazioni = righe[0].split(separatore).map(h => h.trim().replace(/"/g, '').toLowerCase());
+
+                let conteggioAggiunti = 0;
+
+                for (let i = 1; i < righe.length; i++) {
+                    const valori = righe[i].split(separatore).map(v => v.trim().replace(/"/g, ''));
+                    if (valori.length < intestazioni.length - 1) continue; // Salta le righe vuote o sfasate
+
+                    // Crea un oggetto "record" unendo le intestazioni ai valori
+                    let record = {};
+                    intestazioni.forEach((chiave, index) => {
+                        record[chiave] = valori[index] || "";
+                    });
+
+                    // IMPORTAZIONE CLIENTI
+                    if (tabella === 'clienti') {
+                        let nome = record.nome || record.cliente || "CLIENTE SENZA NOME";
+                        let telefono = record.telefono || record.cellulare || record.tel || "";
+                        let scheda = record.scheda || record.card || record.codice || ("200" + Math.floor(Math.random() * 10000000000).toString().padStart(10, '0'));
+                        let punti = parseFloat((record.punti || "0").replace(',', '.')) || 0;
+                        let bonus = Math.floor(punti / 100) * 10;
+                        
+                        let nuovoCliente = { scheda: scheda, nome: nome.toUpperCase(), telefono: telefono, punti: punti, bonus: bonus, dataUltimaOperazione: getOggiString() };
+                        await updateCliente(nuovoCliente);
+                        conteggioAggiunti++;
+                    } 
+                    // IMPORTAZIONE MAGAZZINO
+                    else if (tabella === 'magazzino') {
+                        let codice = record.codice || record.barcode || record.ean || ("210" + Math.floor(Math.random() * 10000000000).toString().padStart(10, '0'));
+                        let descrizione = record.descrizione || record.articolo || record.nome || "ARTICOLO SCONOSCIUTO";
+                        let categoria = record.categoria || record.reparto || "VARIE";
+                        let giacenza = parseInt((record.giacenza || record.quantita || "0")) || 0;
+                        let prezzoVen = parseFloat((record.prezzo || record.prezzovendita || record.listino || "0").replace(',', '.')) || 0;
+                        let prezzoAcq = parseFloat((record.prezzoacquisto || record.costo || "0").replace(',', '.')) || 0;
+
+                        let tx = db.transaction('magazzino', 'readwrite');
+                        let store = tx.objectStore('magazzino');
+                        let nuovoProdotto = { codice: codice, descrizione: descrizione.toUpperCase(), categoria: categoria.toUpperCase(), giacenza: giacenza, prezzoAcquisto: prezzoAcq, prezzo: prezzoVen, tipo: "PZ" };
+                        store.put(nuovoProdotto);
+                        conteggioAggiunti++;
+                    }
+                    // IMPORTAZIONE STORICO VENDITE
+                    else if (tabella === 'vendite') {
+                        let dataExcel = record.data || record.giorno || getOggiString();
+
+                        // Convertitore automatico da formato Excel (DD/MM/YYYY) a formato App (YYYY-MM-DD)
+                        if (dataExcel.includes('/')) {
+                            let parti = dataExcel.split('/');
+                            if (parti.length === 3) {
+                                let anno = parti[2].length === 2 ? "20" + parti[2] : parti[2];
+                                let mese = parti[1].padStart(2, '0');
+                                let giorno = parti[0].padStart(2, '0');
+                                dataExcel = `${anno}-${mese}-${giorno}`;
+                            }
+                        }
+
+                        let ora = record.ora || "12:00";
+                        let cliente = record.cliente || record.nome || "Nessuno";
+                        let contanti = parseFloat((record.contanti || "0").replace(',', '.')) || 0;
+                        let pos = parseFloat((record.pos || record.carta || "0").replace(',', '.')) || 0;
+                        let totaleFallback = parseFloat((record.totale || record.importo || "0").replace(',', '.')) || 0;
+
+                        // Se non ci sono contanti o pos specificati, butta tutto nel contante
+                        if (contanti === 0 && pos === 0 && totaleFallback > 0) {
+                            contanti = totaleFallback;
+                        }
+
+                        let totaleScontrino = contanti + pos;
+                        if (totaleScontrino <= 0) continue; // Salta le righe vuote o a zero
+
+                        // Crea un articolo "fittizio" per riempire lo scontrino storico
+                        let articoliStorici = [{
+                            CODICE: "STORICO",
+                            ARTICOLO: "IMPORTAZIONE DA EXCEL",
+                            DESCRIZIONE: record.descrizione || record.articoli || "VENDITA STORICA EXCEL",
+                            TIPO: "PZ",
+                            IMPORTO: totaleScontrino,
+                            QUANTITA: 1,
+                            CATEGORIA: "STORICO EXCEL"
+                        }];
+
+                        let recordVendita = {
+                            CLIENTE: cliente.toUpperCase(),
+                            GIORNO: dataExcel,
+                            ORA: ora,
+                            CONTANTI: contanti,
+                            POS: pos,
+                            PUNTI_CARICATI: parseFloat((record.punticaricati || "0").replace(',', '.')) || 0,
+                            PUNTI_SCARICATI: parseFloat((record.puntiscaricati || "0").replace(',', '.')) || 0,
+                            BONUS: parseFloat((record.bonus || "0").replace(',', '.')) || 0,
+                            SALDO_PUNTI_INIZIALE: 0,
+                            SALDO_PUNTI_FINALE: 0,
+                            ARTICOLI: articoliStorici
+                        };
+
+                        let tx = db.transaction('vendite', 'readwrite');
+                        let store = tx.objectStore('vendite');
+                        store.add(recordVendita);
+                        conteggioAggiunti++;
+                    }
+                }
+
+                // Chiudiamo le modali e diamo l'esito
+                mostraAvvisoModale(`✅ Importazione completata!<br><br>Sono stati elaborati e salvati <b>${conteggioAggiunti}</b> record nell'archivio ${tabella.toUpperCase()}.`);
+                event.target.value = ''; // Resetta il pulsante in modo da poter ricaricare un file
+            };
+            
+            reader.readAsText(file, 'UTF-8');
+        };
+
+        // 4.1. Salvataggio Impostazioni Personalizzate
+        const MSG_BASE_DEFAULT = "CHEMARIA FIDELITY\n\nCiao, {NOME}\n\nCard N: {SCHEDA}\n\n-------------------------\n* Saldo Iniziale: {SALDO_INIZIALE}\n\n* Punti Caricati: {PUNTI_CARICATI}\n\n* Punti Scaricati: {PUNTI_SCARICATI}\n\n* Saldo Punti: {PUNTI}\n\n* Bonus: € {BONUS}\n-------------------------\n\n{DATA}\n{ORA}";
 
         window.caricaImpostazioniAvanzate = function () {
             // Carica PIN e Messaggio App
@@ -1667,6 +2003,262 @@
             // Usa rigorosamente la modale, mai l'alert
             mostraAvvisoModale("Impostazioni salvate con successo!");
         };
+
+        // ==========================================
+        // ✏️ LOGICA EDITOR AVANZATO MESSAGGI
+        // ==========================================
+
+        // 1. Apre l'editor caricando il testo attuale
+        window.apriEditorMessaggio = function() {
+            let testoAttuale = document.getElementById('impostazioni-msg-template').value;
+            let editor = document.getElementById('editor-messaggio-textarea');
+            editor.value = testoAttuale;
+            
+            apriModale('modal-editor-messaggio');
+            
+            // Mette a fuoco la casella di testo
+            setTimeout(() => {
+                editor.focus();
+                // Sposta il cursore alla fine del testo
+                editor.selectionStart = editor.selectionEnd = editor.value.length;
+            }, 100);
+        };
+
+        // 2. Inserimento intelligente della variabile alla posizione del cursore
+        window.inserisciVariabileMessaggio = function(variabile) {
+            const editor = document.getElementById('editor-messaggio-textarea');
+            
+            // Ottieni la posizione attuale del cursore
+            const inizio = editor.selectionStart;
+            const fine = editor.selectionEnd;
+            const testo = editor.value;
+
+            // Incolla la variabile esattamente dove si trovava il cursore
+            editor.value = testo.substring(0, inizio) + variabile + testo.substring(fine);
+
+            // Ripristina il focus e sposta il cursore subito dopo la variabile appena inserita
+            editor.focus();
+            const nuovaPosizione = inizio + variabile.length;
+            editor.selectionStart = editor.selectionEnd = nuovaPosizione;
+        };
+
+        // 3. Conferma le modifiche e aggiorna l'anteprima
+        window.confermaEditorMessaggio = function() {
+            let nuovoTesto = document.getElementById('editor-messaggio-textarea').value;
+            
+            // Aggiorna la casella di anteprima nelle impostazioni
+            document.getElementById('impostazioni-msg-template').value = nuovoTesto;
+            
+            chiudiModale('modal-editor-messaggio');
+            mostraMessaggio("TESTO NOTIFICA AGGIORNATO (Ricordati di salvare le impostazioni)");
+        };
+
+        // ==========================================
+        // 🔫 LOGICA LETTORE BARCODE GLOBALE (OMNIDIREZIONALE)
+        // ==========================================
+        let bufferScanner = "";
+        let ultimoTastoScanner = 0;
+
+        document.addEventListener('keypress', async function(e) {
+            // 1. Controlla se siamo nella Cassa (il menu principale deve essere chiuso)
+            let menuAperto = document.getElementById('modal-menu-principale').style.display !== 'none';
+            if (menuAperto) return; 
+
+            // 2. Se l'utente sta scrivendo in un altro campo (es. ricerca cliente, calcolatrice), ignora lo scanner globale
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                return; 
+            }
+
+            let tempoAttuale = Date.now();
+            
+            // 3. Se è passato troppo tempo (più di 50 millisecondi) dall'ultimo tasto, 
+            // significa che è un umano che digita sulla tastiera, non uno scanner laser. Azzeriamo la memoria!
+            if (tempoAttuale - ultimoTastoScanner > 50) {
+                bufferScanner = "";
+            }
+
+            // 4. Se lo scanner invia "Enter" (Invio) alla fine del codice
+            if (e.key === 'Enter') {
+                if (bufferScanner.length > 3) {
+                    // Abbiamo un codice a barre valido! Lo cerchiamo in magazzino
+                    const magazzinoCompleto = await getAll('magazzino');
+                    const prodotto = magazzinoCompleto.find(p => p.codice === bufferScanner);
+                    
+                    if (prodotto) {
+                        aggiungiProdotto(prodotto);
+                    } else {
+                        mostraAvvisoModale(`<b>PRODOTTO SCONOSCIUTO</b><br>Nessun articolo trovato con il codice: ${bufferScanner}`);
+                    }
+                    bufferScanner = ""; // Svuota la memoria per il prossimo codice
+                }
+            } else {
+                // Aggiunge la lettera o il numero alla memoria temporanea
+                bufferScanner += e.key;
+            }
+            
+            ultimoTastoScanner = tempoAttuale;
+        });
+
+        // ==========================================
+        // 👤 GESTIONE DIPENDENTI E OPERATORI
+        // ==========================================
+        let operatoreAttivo = localStorage.getItem('operatore_attivo') || "Admin";
+        let listaOperatori = JSON.parse(localStorage.getItem('lista_operatori')) || ["Admin"];
+
+        // Avvio: imposta il nome nella barra
+        document.getElementById('label-operatore').textContent = operatoreAttivo;
+
+        window.apriModaleOperatore = function() {
+            let html = "";
+            listaOperatori.forEach(op => {
+                let isAttivo = (op === operatoreAttivo);
+                html += `<button class="btn-modal ${isAttivo ? 'btn-verde' : 'btn-grigio'}" style="text-align: left; font-size: 1.8vh; padding: 12px; display: flex; justify-content: space-between;" onclick="selezionaOperatore('${op}')"><b>${op}</b> <span>${isAttivo ? '✅ ATTIVO' : ''}</span></button>`;
+            });
+            document.getElementById('lista-bottoni-operatori').innerHTML = html;
+            apriModale('modal-operatore');
+        };
+
+        window.selezionaOperatore = function(nome) {
+            operatoreAttivo = nome;
+            localStorage.setItem('operatore_attivo', nome);
+            document.getElementById('label-operatore').textContent = nome;
+            chiudiModale('modal-operatore');
+            mostraMessaggio(`OPERATORE ATTIVO: ${nome}`);
+        };
+
+        window.aggiungiOperatore = function() {
+            let nome = document.getElementById('nuovo-nome-operatore').value.trim();
+            if(nome && !listaOperatori.includes(nome)) {
+                listaOperatori.push(nome);
+                localStorage.setItem('lista_operatori', JSON.stringify(listaOperatori));
+                document.getElementById('nuovo-nome-operatore').value = "";
+                selezionaOperatore(nome); // Lo attiva direttamente
+            }
+        };
+
+        // ==========================================
+        // 📊 MOTORE DASHBOARD STATISTICHE
+        // ==========================================
+        window.calcolaStatistiche = async function() {
+            const periodoScelto = document.getElementById('stat-periodo').value;
+            const tutteLeVendite = await getAll('vendite');
+            
+            // 1. Filtro Data
+            let venditeFiltrate = [];
+            let oggi = new Date();
+            let dataOggiStr = getOggiString(); // formato YYYY-MM-DD
+            
+            tutteLeVendite.forEach(v => {
+                let dataVendita = new Date(v.GIORNO);
+                let includi = false;
+
+                if (periodoScelto === 'oggi' && v.GIORNO === dataOggiStr) includi = true;
+                else if (periodoScelto === 'ieri') {
+                    let ieri = new Date(oggi); ieri.setDate(ieri.getDate() - 1);
+                    if (v.GIORNO === ieri.toISOString().split('T')[0]) includi = true;
+                }
+                else if (periodoScelto === 'settimana') {
+                    let limite = new Date(oggi); limite.setDate(limite.getDate() - 7);
+                    if (dataVendita >= limite) includi = true;
+                }
+                else if (periodoScelto === 'mese') {
+                    if (dataVendita.getMonth() === oggi.getMonth() && dataVendita.getFullYear() === oggi.getFullYear()) includi = true;
+                }
+                else if (periodoScelto === 'tutto') includi = true;
+
+                if (includi) venditeFiltrate.push(v);
+            });
+
+            // 2. Elaborazione Metriche Base
+            let incassoTotale = 0;
+            let numeroScontrini = venditeFiltrate.length;
+            let prodottiVenduti = {};
+            let incassiOperatori = {};
+
+            venditeFiltrate.forEach(v => {
+                let totaleScontrino = v.POS + v.CONTANTI;
+                incassoTotale += totaleScontrino;
+
+                // Calcolo Operatori
+                let op = v.OPERATORE || "Sconosciuto";
+                if(!incassiOperatori[op]) incassiOperatori[op] = 0;
+                incassiOperatori[op] += totaleScontrino;
+
+                // Calcolo Prodotti
+                if(v.ARTICOLI) {
+                    v.ARTICOLI.forEach(art => {
+                        if(!prodottiVenduti[art.DESCRIZIONE]) {
+                            prodottiVenduti[art.DESCRIZIONE] = { qta: 0, incasso: 0, categoria: art.CATEGORIA };
+                        }
+                        prodottiVenduti[art.DESCRIZIONE].qta += art.QUANTITA;
+                        prodottiVenduti[art.DESCRIZIONE].incasso += (art.IMPORTO * art.QUANTITA);
+                    });
+                }
+            });
+
+            let mediaScontrino = numeroScontrini > 0 ? (incassoTotale / numeroScontrini) : 0;
+
+            // 3. Stampa Metriche
+            document.getElementById('stat-tot-incasso').textContent = `€ ${incassoTotale.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+            document.getElementById('stat-tot-scontrini').textContent = numeroScontrini;
+            document.getElementById('stat-media-scontrino').textContent = `€ ${mediaScontrino.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+
+            // 4. Stampa Operatori (ordinati per incasso)
+            let operatoriArray = Object.keys(incassiOperatori).map(op => ({ nome: op, incasso: incassiOperatori[op] }));
+            operatoriArray.sort((a, b) => b.incasso - a.incasso);
+            
+            let htmlOperatori = "";
+            operatoriArray.forEach(op => {
+                let percentuale = incassoTotale > 0 ? ((op.incasso / incassoTotale) * 100).toFixed(0) : 0;
+                htmlOperatori += `
+                    <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid #00cc66;">
+                        <div>
+                            <div style="color: #fff; font-weight: bold; font-size: 1.6vh;">👤 ${op.nome}</div>
+                            <div style="color: #8888bb; font-size: 1.3vh;">${percentuale}% del totale</div>
+                        </div>
+                        <div style="color: #00cc66; font-weight: bold; font-size: 1.8vh;">€ ${op.incasso.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                    </div>`;
+            });
+            if(htmlOperatori === "") htmlOperatori = "<div style='color:#8888bb;'>Nessuna vendita nel periodo selezionato.</div>";
+            document.getElementById('stat-lista-operatori').innerHTML = htmlOperatori;
+
+            // 5. Stampa Prodotti Top 50 (ordinati per quantità venduta)
+            let prodottiArray = Object.keys(prodottiVenduti).map(nome => ({ nome: nome, qta: prodottiVenduti[nome].qta, incasso: prodottiVenduti[nome].incasso, cat: prodottiVenduti[nome].categoria }));
+            prodottiArray.sort((a, b) => b.qta - a.qta);
+            prodottiArray = prodottiArray.slice(0, 50); // Prendi solo i primi 50
+
+            let htmlProdotti = "";
+            prodottiArray.forEach((p, index) => {
+                let medaglia = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `<b>${index+1}.</b>`;
+                htmlProdotti += `
+                    <div class="crm-list-item" style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <div style="font-size: 2vh; width: 30px; text-align: center;">${medaglia}</div>
+                            <div>
+                                <div style="color: #ffffff; font-weight: bold; font-size: 1.6vh;">${p.nome}</div>
+                                <div style="color: #b3d9ff; font-size: 1.3vh;">Cat: ${p.cat}</div>
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="color: #ffcc00; font-weight: bold; font-size: 1.8vh;">${p.qta} Pz.</div>
+                            <div style="color: #4d88ff; font-size: 1.4vh;">Incasso: € ${p.incasso.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                        </div>
+                    </div>`;
+            });
+            if(htmlProdotti === "") htmlProdotti = "<div style='color:#8888bb; padding: 15px;'>Nessun prodotto venduto nel periodo selezionato.</div>";
+            document.getElementById('stat-lista-prodotti').innerHTML = htmlProdotti;
+        };
+
+        // ==========================================
+        // 🛡️ FILTRO GLOBALE CAMPI NUMERICI E IMPORTI
+        // ==========================================
+        document.querySelectorAll('input[inputmode="decimal"], input[inputmode="numeric"]').forEach(input => {
+            input.addEventListener('input', function() {
+                // Elimina in tempo reale qualsiasi lettera o simbolo non consentito.
+                // Lascia passare solo: numeri (0-9), virgola (,), punto (.), simbolo euro (€), spazio e segno meno (-)
+                this.value = this.value.replace(/[^0-9.,€ \-]/g, '');
+            });
+        });
 
         // Modifica il tasto "ESCI" della cassa (prima icona in alto a sx)
         // affinché invece di chiudere l'app, torni al Menu Principale
