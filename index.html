@@ -33,8 +33,11 @@
             <span id="sys-wifi" class="wifi-online">🟢 ONLINE</span>
             <span id="sys-data" style="margin-left: 15px;">--/--/----</span>
         </div>
-        <div class="sys-center">
+        <div class="sys-center" style="display:flex; align-items:center; justify-content:center; gap: 15px;">
             CASSA GESTIONALE PWA
+            <button onclick="apriModaleOperatore()" style="background: rgba(255,255,255,0.1); border: 1px solid #4d88ff; color: #fff; border-radius: 4px; padding: 2px 10px; font-size: 1.5vh; cursor:pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(77,136,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">
+                👤 <span id="label-operatore">Admin</span>
+            </button>
         </div>
         <div class="sys-right">
             <span id="sys-orologio">00:00:00</span>
@@ -118,7 +121,7 @@
     <div class="modal-overlay overlay-primo-piano" id="modal-conferma-elimina">
         <div class="modal-box" style="width: 450px; border-color: #ff4d4d;">
             <div class="modal-titolo" style="color: #ff4d4d;">🗑️ CONFERMA ELIMINAZIONE</div>
-            <p style="font-size: 2.2vh; margin-bottom: 25px; line-height: 1.4;">Sei sicuro di voler ELIMINARE DEFINITIVAMENTE questo dato?</p>
+            <p id="msg-conferma-elimina" style="font-size: 2.2vh; margin-bottom: 25px; line-height: 1.4;">Sei sicuro di voler ELIMINARE DEFINITIVAMENTE questo dato?</p>
             <div class="modal-bottoniera">
                 <button class="btn-modal btn-grigio" onclick="chiudiModale('modal-conferma-elimina')">ANNULLA</button>
                 <button class="btn-modal btn-rosso" onclick="eseguiEliminazioneUniversale()">SÌ, ELIMINA</button>
@@ -253,7 +256,7 @@
                     <button class="btn-modal btn-verde" onclick="crmSalvaCliente()" style="flex: 1.5;">💾 SALVA CLIENTE</button>
                 </div>
             </div>
-            <button class="btn-chiudi-modale" onclick="chiudiModale('modal-gestione-clienti')">✕</button>
+            <button class="btn-chiudi-modale" onclick="chiudiModulo('modal-gestione-clienti')">✕</button>
         </div>
     </div>
 
@@ -322,7 +325,7 @@
                 </div>
             </div>
 
-            <button class="btn-chiudi-modale" onclick="chiudiModale('modal-magazzino')">✕</button>
+            <button class="btn-chiudi-modale" onclick="chiudiModulo('modal-magazzino')">✕</button>
         </div>
     </div>
 
@@ -350,7 +353,7 @@
                 </div>
                 <div class="reg-list" id="reg-lista-movimenti"></div>
             </div>
-            <button class="btn-chiudi-modale" onclick="chiudiModale('modal-registro-cassa')">✕</button>
+            <button class="btn-chiudi-modale" onclick="chiudiModulo('modal-registro-cassa')">✕</button>
         </div>
     </div>
 
@@ -359,7 +362,7 @@
 
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #4d88ff; padding-bottom: 10px; margin-bottom: 15px;">
                 <div class="modal-titolo" style="margin: 0;">🧾 RICERCA AVANZATA CONTABILITÀ</div>
-                <button class="btn-modal btn-grigio" onclick="chiudiModale('modal-contabilita')">CHIUDI</button>
+                <button class="btn-modal btn-grigio" onclick="chiudiModulo('modal-contabilita')">CHIUDI</button>
             </div>
 
             <div style="display: flex; gap: 10px; margin-bottom: 15px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px;">
@@ -509,7 +512,7 @@
                 <button class="btn-modal btn-verde" style="flex: 1;" onclick="applicaPuntiManuali('CARICA')">➕ CARICA</button>
             </div>
 
-            <button class="btn-chiudi-modale" onclick="chiudiModale('modal-punti-manuali')">✕</button>
+            <button class="btn-chiudi-modale" onclick="chiudiModulo('modal-punti-manuali')">✕</button>
         </div>
     </div>
 
@@ -554,10 +557,10 @@
                 </div>
 
                 <div class="modal-bottoniera" style="margin-top: auto;">
-                    <button class="btn-modal btn-grigio" onclick="chiudiModale('modal-calendario')" style="width: 100%;">CHIUDI</button>
+                    <button class="btn-modal btn-grigio" onclick="chiudiModulo('modal-calendario')" style="width: 100%;">CHIUDI</button>
                 </div>
             </div>
-            <button class="btn-chiudi-modale" onclick="chiudiModale('modal-calendario')">✕</button>
+            <button class="btn-chiudi-modale" onclick="chiudiModulo('modal-calendario')">✕</button>
         </div>
     </div>
 
@@ -679,13 +682,12 @@
                         <input type="checkbox" id="impostazioni-pin-toggle" style="width: 25px; height: 25px; cursor: pointer; accent-color: #00ffcc;">
                     </div>
 
-                    <div class="crm-form-group" style="margin-bottom: 0;">
-                        <label class="crm-label" style="color: #ffffff;">💬 Testo Notifiche (WhatsApp / Telegram / App)</label>
-                        <p style="font-size: 1.4vh; color: #b3d9ff; margin: 5px 0 10px 0; line-height: 1.4;">
-                            Usa queste variabili nel testo:<br>
-                            <b>{NOME}</b> = Nome | <b>{PUNTI}</b> = Saldo | <b>{BONUS}</b> = Bonus in €
-                        </p>
-                        <textarea id="impostazioni-msg-template" class="crm-input" style="height: 100px; resize: none; font-size: 1.8vh; line-height: 1.4;" placeholder="Scrivi qui il messaggio..."></textarea>
+                    <div class="crm-form-group" style="margin-bottom: 0; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border: 1px dashed #00ffcc;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <label class="crm-label" style="margin: 0; color: #ffffff;">💬 Anteprima Testo Notifiche</label>
+                            <button class="btn-modal btn-blu" style="padding: 8px 15px; font-size: 1.6vh;" onclick="apriEditorMessaggio()">📝 APRI EDITOR AVANZATO</button>
+                        </div>
+                        <textarea id="impostazioni-msg-template" class="crm-input" style="height: 120px; resize: none; font-size: 1.6vh; line-height: 1.4; background: rgba(255,255,255,0.05); color: #8888bb; cursor: not-allowed; border: 1px solid rgba(255,255,255,0.1);" readonly title="Clicca su APRI EDITOR AVANZATO per modificare"></textarea>
                     </div>
                 </div>
 
@@ -727,6 +729,23 @@
                     <button class="btn-modal btn-verde" onclick="esportaBackupCompleto()" style="width: 100%; font-size: 1.6vh; margin-top: 10px;">💾 SCARICA BACKUP TOTALE SISTEMA</button>
                 </div>
 
+                <div style="background: rgba(153, 51, 255, 0.1); border: 1px solid #9933ff; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <div style="font-size: 1.8vh; color: #d9b3ff; margin-bottom: 10px; font-weight: bold;">IMPORTAZIONE DATI EXCEL (CSV)</div>
+                    <p style="font-size: 1.4vh; color: #ffffff; margin-top: 0; margin-bottom: 15px; line-height: 1.4;">
+                        Salva i tuoi fogli Excel in formato <b>.CSV</b> prima di caricarli.<br>Il sistema cercherà in automatico le colonne corrette.
+                    </p>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="file" id="file-import-clienti" accept=".csv" style="display: none;" onchange="gestisciImportazioneCSV(event, 'clienti')">
+                        <button class="btn-modal" style="flex: 1; font-size: 1.5vh; background-color: #9933ff; color: white;" onclick="document.getElementById('file-import-clienti').click()">⬆️ CLIENTI</button>
+
+                        <input type="file" id="file-import-magazzino" accept=".csv" style="display: none;" onchange="gestisciImportazioneCSV(event, 'magazzino')">
+                        <button class="btn-modal" style="flex: 1; font-size: 1.5vh; background-color: #9933ff; color: white;" onclick="document.getElementById('file-import-magazzino').click()">⬆️ MAGAZZINO</button>
+
+                        <input type="file" id="file-import-vendite" accept=".csv" style="display: none;" onchange="gestisciImportazioneCSV(event, 'vendite')">
+                        <button class="btn-modal" style="flex: 1; font-size: 1.5vh; background-color: #00cc66; color: #003300;" onclick="document.getElementById('file-import-vendite').click()">⬆️ STORICO VENDITE</button>
+                    </div>
+                </div>
+
                 <div style="background: rgba(255, 77, 77, 0.1); border: 1px solid #ff4d4d; padding: 15px; border-radius: 8px; display: flex; flex-direction: column; flex-grow: 1;">
                     <div style="font-size: 1.8vh; color: #ff6666; margin-bottom: 15px; font-weight: bold;">MANUTENZIONE DATABASE</div>
                     <p style="font-size: 1.6vh; color: #ffcccc; margin-top: 0; margin-bottom: 15px; line-height: 1.4;">
@@ -737,12 +756,57 @@
                 </div>
 
                 <div class="modal-bottoniera" style="margin-top: 20px;">
-                    <button class="btn-modal btn-grigio" style="flex: 1;" onclick="chiudiModale('modal-impostazioni'); apriModale('modal-menu-principale');">ANNULLA / ESCI</button>
+                    <button class="btn-modal btn-grigio" style="flex: 1;" onclick="chiudiModulo('modal-impostazioni')">ANNULLA / ESCI</button>
                     <button class="btn-modal btn-verde" style="flex: 2;" onclick="salvaImpostazioniAvanzate()">💾 SALVA TUTTE LE IMPOSTAZIONI</button>
                 </div>
             </div>
 
-            <button class="btn-chiudi-modale" onclick="chiudiModale('modal-impostazioni'); apriModale('modal-menu-principale');">✕</button>
+            <button class="btn-chiudi-modale" onclick="chiudiModulo('modal-impostazioni')">✕</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay overlay-primo-piano" id="modal-editor-messaggio" style="z-index: 1300;">
+        <div class="modal-box modal-grande modal-full" style="display: flex; flex-direction: column;">
+
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #9933ff; padding-bottom: 10px; margin-bottom: 15px; flex-shrink: 0;">
+                <div class="modal-titolo" style="color: #d9b3ff; margin: 0; text-align: left; font-size: 3vh;">✏️ EDITOR AVANZATO MESSAGGI</div>
+                <div style="font-size: 1.8vh; color: #b3d9ff;">Posiziona il cursore nel testo e usa i tasti per inserire le variabili</div>
+            </div>
+
+            <div style="display: flex; gap: 2vw; flex-grow: 1; overflow: hidden;">
+
+                <div class="crm-left" style="flex: 1; border-color: #9933ff; overflow-y: auto;">
+                    <div style="font-size: 1.8vh; color: #d9b3ff; margin-bottom: 15px; font-weight: bold; text-align: center;">VARIABILI DISPONIBILI</div>
+
+                    <div style="font-size: 1.5vh; color: #b3d9ff; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px;">Dati Cliente</div>
+                    <button class="btn-modal btn-grigio" style="text-align: left; font-size: 1.8vh; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between;" onclick="inserisciVariabileMessaggio('{NOME}')"><b>{NOME}</b> <span style="font-weight:normal;">Nome Cliente</span></button>
+                    <button class="btn-modal btn-grigio" style="text-align: left; font-size: 1.8vh; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between;" onclick="inserisciVariabileMessaggio('{SCHEDA}')"><b>{SCHEDA}</b> <span style="font-weight:normal;">Numero Card</span></button>
+
+                    <div style="font-size: 1.5vh; color: #b3d9ff; margin-top: 15px; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px;">Movimenti Punti</div>
+                    <button class="btn-modal btn-grigio" style="text-align: left; font-size: 1.8vh; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between;" onclick="inserisciVariabileMessaggio('{SALDO_INIZIALE}')"><b>{SALDO_INIZIALE}</b> <span style="font-weight:normal;">Punti Precedenti</span></button>
+                    <button class="btn-modal btn-grigio" style="text-align: left; font-size: 1.8vh; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between; color: #008000;" onclick="inserisciVariabileMessaggio('{PUNTI_CARICATI}')"><b>{PUNTI_CARICATI}</b> <span style="font-weight:normal;">Guadagnati</span></button>
+                    <button class="btn-modal btn-grigio" style="text-align: left; font-size: 1.8vh; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between; color: #cc0000;" onclick="inserisciVariabileMessaggio('{PUNTI_SCARICATI}')"><b>{PUNTI_SCARICATI}</b> <span style="font-weight:normal;">Spesi</span></button>
+
+                    <div style="font-size: 1.5vh; color: #b3d9ff; margin-top: 15px; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px;">Saldi Finali e Data</div>
+                    <button class="btn-modal btn-grigio" style="text-align: left; font-size: 1.8vh; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between;" onclick="inserisciVariabileMessaggio('{PUNTI}')"><b>{PUNTI}</b> <span style="font-weight:normal;">Saldo Finale</span></button>
+                    <button class="btn-modal btn-grigio" style="text-align: left; font-size: 1.8vh; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between;" onclick="inserisciVariabileMessaggio('{BONUS}')"><b>{BONUS}</b> <span style="font-weight:normal;">Bonus in €</span></button>
+                    <button class="btn-modal btn-grigio" style="text-align: left; font-size: 1.8vh; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between;" onclick="inserisciVariabileMessaggio('{DATA}')"><b>{DATA}</b> <span style="font-weight:normal;">Data Scontrino</span></button>
+                    <button class="btn-modal btn-grigio" style="text-align: left; font-size: 1.8vh; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between;" onclick="inserisciVariabileMessaggio('{ORA}')"><b>{ORA}</b> <span style="font-weight:normal;">Ora Scontrino</span></button>
+                </div>
+
+                <div class="crm-right" style="flex: 2; border-color: #9933ff; display: flex; flex-direction: column;">
+                    <div style="font-size: 1.8vh; color: #d9b3ff; margin-bottom: 10px; font-weight: bold; text-align: center;">TESTO DEL MESSAGGIO</div>
+
+                    <textarea id="editor-messaggio-textarea" class="crm-input" style="flex-grow: 1; resize: none; font-size: 2.5vh; line-height: 1.5; padding: 2vh 2vw; background: #e0e0ff; color: #000033; border: none; border-radius: 4px;" placeholder="Scrivi qui il template del tuo messaggio..."></textarea>
+
+                    <div class="modal-bottoniera" style="margin-top: 2vh; flex-shrink: 0;">
+                        <button class="btn-modal btn-rosso" style="flex: 1;" onclick="chiudiModale('modal-editor-messaggio')">ANNULLA MODIFICHE</button>
+                        <button class="btn-modal btn-verde" style="flex: 2; background-color: #9933ff; color: white;" onclick="confermaEditorMessaggio()">💾 CONFERMA E APPLICA TESTO</button>
+                    </div>
+                </div>
+            </div>
+
+            <button class="btn-chiudi-modale" onclick="chiudiModale('modal-editor-messaggio')">✕</button>
         </div>
     </div>
 
@@ -794,6 +858,10 @@
                     <div class="menu-icon"><img src="icone/magazino.png" onerror="this.insertAdjacentText('afterend', '📦')"></div>
                     <div class="menu-label">MAGAZZINO</div>
                 </div>
+                <div class="menu-tile" onclick="avviaFunzione('STATISTICHE')">
+                    <div class="menu-icon"><img src="icone/statistiche.png" onerror="this.style.display='none'; this.insertAdjacentText('afterend', '📊');"></div>
+                    <div class="menu-label" style="color: #ffcc00;">STATISTICHE</div>
+                </div>
                 <div class="menu-tile" onclick="avviaFunzione('SETUP')">
                     <div class="menu-icon"><img src="icone/impostazioni.png" onerror="this.insertAdjacentText('afterend', '⚙️')"></div>
                     <div class="menu-label">IMPOSTAZIONI</div>
@@ -813,6 +881,79 @@
             <div class="menu-footer">
                 Versione 1.0.3 - Database Online: <span id="menu-status-web">Verifica...</span>
             </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay overlay-primo-piano" id="modal-operatore" style="z-index: 1400;">
+        <div class="modal-box" style="width: 400px; border-color: #00cc66;">
+            <div class="modal-titolo" style="color: #00cc66;">👤 SELEZIONA OPERATORE</div>
+            <div id="lista-bottoni-operatori" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; max-height: 300px; overflow-y: auto;">
+            </div>
+            <div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 15px; text-align: left;">
+                <label class="crm-label" style="color: #b3d9ff; font-size: 1.4vh;">Aggiungi un nuovo dipendente:</label>
+                <input type="text" id="nuovo-nome-operatore" class="crm-input" placeholder="Nome operatore..." style="margin-bottom: 10px; font-size: 1.8vh;">
+                <button class="btn-modal btn-verde" style="width: 100%;" onclick="aggiungiOperatore()">➕ SALVA E ATTIVA</button>
+            </div>
+            <div class="modal-bottoniera" style="margin-top: 20px;">
+                <button class="btn-modal btn-grigio" style="width: 100%;" onclick="chiudiModale('modal-operatore')">ANNULLA</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay overlay-primo-piano" id="modal-statistiche" style="z-index: 1200;">
+        <div class="modal-box modal-grande modal-full" style="display: flex; flex-direction: column;">
+
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ffcc00; padding-bottom: 10px; margin-bottom: 15px; flex-shrink: 0;">
+                <div class="modal-titolo" style="color: #ffcc00; margin: 0; text-align: left; font-size: 3vh;">📊 DASHBOARD STATISTICHE VENDITE</div>
+                <div>
+                    <select id="stat-periodo" class="crm-input" style="width: auto; padding: 1vh 1vw; font-size: 2vh; background: #001a3a; color: #fff; border-color: #ffcc00;" onchange="calcolaStatistiche()">
+                        <option value="oggi">Oggi</option>
+                        <option value="ieri">Ieri</option>
+                        <option value="settimana">Ultimi 7 Giorni</option>
+                        <option value="mese">Questo Mese</option>
+                        <option value="tutto">Tutto lo storico</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 2vw; flex-grow: 1; overflow: hidden;">
+                <div class="crm-left" style="flex: 1; border-color: #ffcc00; overflow-y: auto;">
+                    <div style="font-size: 1.8vh; color: #ffeb99; margin-bottom: 15px; font-weight: bold; text-align: center;">METRICHE GLOBALI</div>
+
+                    <div class="crm-stats" style="flex-direction: column; gap: 15px; margin-bottom: 30px; border-color: rgba(255,204,0,0.5);">
+                        <div class="crm-stat-box" style="background: rgba(255,204,0,0.1); padding: 15px; border-radius: 8px;">
+                            <div class="crm-stat-lbl" style="color: #ffcc00;">Incasso Totale</div>
+                            <div class="crm-stat-val" id="stat-tot-incasso" style="font-size: 5vh;">€ 0,00</div>
+                        </div>
+                        <div style="display: flex; gap: 15px;">
+                            <div class="crm-stat-box" style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
+                                <div class="crm-stat-lbl">Scontrini Emessi</div>
+                                <div class="crm-stat-val" id="stat-tot-scontrini" style="font-size: 3.5vh; color: #fff;">0</div>
+                            </div>
+                            <div class="crm-stat-box" style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
+                                <div class="crm-stat-lbl">Spesa Media</div>
+                                <div class="crm-stat-val" id="stat-media-scontrino" style="font-size: 3.5vh; color: #fff;">€ 0,00</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="font-size: 1.8vh; color: #ffeb99; margin-bottom: 15px; font-weight: bold; text-align: center;">INCASSI PER OPERATORE</div>
+                    <div id="stat-lista-operatori" style="display: flex; flex-direction: column; gap: 10px;">
+                    </div>
+                </div>
+
+                <div class="crm-right" style="flex: 2; border-color: #ffcc00; display: flex; flex-direction: column;">
+                    <div style="font-size: 1.8vh; color: #ffeb99; margin-bottom: 15px; font-weight: bold; text-align: center;">CLASSIFICA PRODOTTI PIÙ VENDUTI (TOP 50)</div>
+
+                    <div id="stat-lista-prodotti" class="crm-list" style="flex-grow: 1; border-color: rgba(255,204,0,0.2);">
+                    </div>
+
+                    <div class="modal-bottoniera" style="margin-top: 2vh; flex-shrink: 0;">
+                        <button class="btn-modal btn-grigio" style="width: 100%;" onclick="chiudiModulo('modal-statistiche')">TORNA AL MENU PRINCIPALE</button>
+                    </div>
+                </div>
+            </div>
+            <button class="btn-chiudi-modale" onclick="chiudiModulo('modal-statistiche')">✕</button>
         </div>
     </div>
 
