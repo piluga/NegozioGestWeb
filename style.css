@@ -570,110 +570,115 @@
                 cursor: default;
             }
 
-        /* CRM & REGISTRO (Layout Grande) */
+        /* 🌟 CRM, MAGAZZINO E REGISTRO (Layout Fluido e Proporzionale) */
         .modal-grande {
-            width: 90%;
-            max-width: 1200px;
-            height: 85vh;
+            width: 96vw;
+            height: 94vh;
+            max-width: none;
             display: flex;
-            gap: 20px;
+            gap: 2vw;
             flex-direction: row;
             text-align: left;
+            padding: 3vh 2vw;
+            box-sizing: border-box;
         }
 
-        .crm-left {
-            flex: 1;
+        .modal-full {
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: 100vw !important;
+            max-height: 100vh !important;
+            border-radius: 0 !important;
+            border: none !important;
+            background: #001229 !important;
+            margin: 0;
+            padding: 2vh 2vw; /* Margini proporzionali */
+            box-sizing: border-box;
+        }
+
+        /* Colonne Strutturali Bloccate */
+        .crm-left, .crm-right {
             display: flex;
             flex-direction: column;
             background: rgba(0,0,0,0.3);
-            border: 2px solid #4d88ff;
-            border-radius: 8px;
-            padding: 15px;
-            overflow: hidden;
+            border: 0.2vh solid #4d88ff;
+            border-radius: 1vh;
+            padding: 2vh 1.5vw;
+            height: 100%;
+            overflow: hidden; /* Blocca le barre di scorrimento esterne! */
+            box-sizing: border-box;
         }
 
-        .crm-right {
-            flex: 1.5;
+        .crm-left { flex: 1; }
+        .crm-right { flex: 1.5; }
+
+        /* Solo le liste interne scorrono */
+        .crm-list, .reg-list {
+            flex-grow: 1;
+            overflow-y: auto; /* La barra di scorrimento appare solo qui dentro */
             display: flex;
             flex-direction: column;
-            background: rgba(0,0,0,0.3);
-            border: 2px solid #4d88ff;
-            border-radius: 8px;
-            padding: 25px;
+            gap: 1vh;
+            padding-right: 0.5vw;
+            margin-top: 1vh;
+            border-top: 0.1vh solid rgba(255,255,255,0.1);
+            padding-top: 1vh;
         }
 
         .crm-search {
             width: 100%;
-            padding: 12px;
+            padding: 1.5vh 1vw;
             font-size: 2vh;
-            border-radius: 4px;
-            border: 1px solid #4d88ff;
+            border-radius: 0.5vh;
+            border: 0.1vh solid #4d88ff;
             background: #ffffff;
-            margin-bottom: 15px;
+            margin-bottom: 1.5vh;
             outline: none;
             box-sizing: border-box;
+            flex-shrink: 0; /* Impedisce che la barra di ricerca si rimpicciolisca */
         }
 
-        .crm-list {
-            flex-grow: 1;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-
+        /* Adattamento Elementi di Lista */
         .crm-list-item {
             background: rgba(255,255,255,0.1);
-            padding: 12px;
-            border-radius: 4px;
+            padding: 1.5vh 1vw;
+            border-radius: 0.5vh;
             cursor: pointer;
-            border-left: 5px solid transparent;
+            border-left: 0.5vw solid transparent;
             transition: all 0.1s;
         }
 
-            .crm-list-item:hover {
-                background: rgba(255,255,255,0.2);
-                border-left-color: #00ffcc;
-            }
-
-            .crm-list-item.attivo {
-                background: #005A9C;
-                border-left-color: #00ffcc;
-            }
-
-        .crm-list-nome {
-            font-weight: bold;
-            font-size: 2.2vh;
-            color: #ffffff;
+        .crm-list-item:hover {
+            background: rgba(255,255,255,0.2);
+            border-left-color: #00ffcc;
         }
 
-        .crm-list-dati {
-            font-size: 1.8vh;
-            color: #b3d9ff;
-            display: flex;
-            justify-content: space-between;
-            margin-top: 5px;
+        .crm-list-item.attivo {
+            background: #005A9C;
+            border-left-color: #00ffcc;
         }
 
+        /* Adattamento Form e Bottoni Interni */
         .crm-form-group {
-            margin-bottom: 20px;
+            margin-bottom: 2vh;
+            flex-shrink: 0;
         }
 
         .crm-label {
             display: block;
-            font-size: 2vh;
+            font-size: 1.8vh;
             color: #b3d9ff;
             font-weight: bold;
-            margin-bottom: 5px;
+            margin-bottom: 0.5vh;
             text-transform: uppercase;
         }
 
         .crm-input {
             width: 100%;
-            padding: 12px;
-            font-size: 2.5vh;
-            border-radius: 4px;
-            border: 1px solid white;
+            padding: 1.5vh 1vw;
+            font-size: 2.2vh;
+            border-radius: 0.5vh;
+            border: 0.1vh solid white;
             background: #e0e0ff;
             font-weight: bold;
             color: #000033;
@@ -681,54 +686,31 @@
             transition: 0.2s;
         }
 
-            .crm-input:focus {
-                background-color: #00ff00;
-                outline: none;
-            }
-
         .crm-stats {
             display: flex;
-            gap: 20px;
+            gap: 2vw;
             background: rgba(0,0,0,0.5);
-            padding: 15px;
-            border-radius: 8px;
-            border: 1px solid #00ffcc;
-            margin-top: 10px;
-            margin-bottom: 30px;
+            padding: 2vh 1.5vw;
+            border-radius: 1vh;
+            border: 0.1vh solid #00ffcc;
+            margin-top: 1vh;
+            margin-bottom: 2vh;
+            flex-shrink: 0;
         }
 
-        .crm-stat-box {
-            flex: 1;
-            text-align: center;
-        }
+        .crm-stat-box { flex: 1; text-align: center; }
+        .crm-stat-val { font-size: 4vh; font-weight: bold; color: #ffcc00; }
+        .crm-stat-lbl { font-size: 1.6vh; color: #ffffff; text-transform: uppercase; }
 
-        .crm-stat-val {
-            font-size: 4vh;
-            font-weight: bold;
-            color: #ffcc00;
+        /* Bottoniera sempre fissa in basso */
+        .modal-bottoniera {
+            display: flex;
+            justify-content: center;
+            gap: 1.5vw;
+            margin-top: auto; /* Spinge la bottoniera in fondo al contenitore */
+            flex-shrink: 0;
+            padding-top: 2vh;
         }
-
-        .crm-stat-lbl {
-            font-size: 1.8vh;
-            color: #ffffff;
-            text-transform: uppercase;
-        }
-
-        .btn-genera {
-            background: linear-gradient(to bottom, #4d88ff, #005A9C);
-            color: white;
-            border: 1px solid white;
-            border-radius: 4px;
-            padding: 0 15px;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 2vh;
-            transition: 0.1s;
-        }
-
-            .btn-genera:active {
-                transform: scale(0.95);
-            }
 
         /* REGISTRO DI CASSA */
         .reg-card {
@@ -900,46 +882,66 @@
             }
         }
 
-        /* 🏠 STILI MENU PRINCIPALE */
+        /* 🏠 STILI MENU PRINCIPALE (Adattivo e Proporzionale) */
         .menu-container {
-            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
             width: 100%;
             max-width: 1000px;
-            padding: 40px;
+            height: 100vh; /* Occupa esattamente il 100% dell'altezza dello schermo */
+            padding: 4vh 2vw; /* Margini proporzionali allo schermo */
+            box-sizing: border-box;
+            overflow: hidden; /* Blocca definitivamente la comparsa di scrollbar */
         }
 
         .menu-header {
-            margin-bottom: 50px;
+            margin-bottom: 2vh;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Centra l'icona orizzontalmente */
+            text-align: center;  /* Centra il testo orizzontalmente */
+            width: 100%;
         }
 
         .menu-logo {
-            width: 80px;
-            height: 80px;
-            filter: drop-shadow(0 0 15px #4d88ff);
-            margin-bottom: 15px;
+            height: 8vh;
+            width: auto;
+            filter: drop-shadow(0 0 1vh #4d88ff);
+            margin-bottom: 1.5vh;
         }
 
         .menu-header h1 {
             color: #ffffff;
-            font-size: 5vh;
-            letter-spacing: 3px;
+            font-size: 4.5vh;
+            letter-spacing: 0.2vw;
             text-transform: uppercase;
             margin: 0;
+        }
+
+        .menu-header p {
+            font-size: 1.8vh !important;
+            margin: 0.5vh 0 0 0 !important;
         }
 
         .menu-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 25px;
+            gap: 2.5vh 1.5vw;
+            width: 100%;
+            flex-grow: 1; /* Prende tutto lo spazio centrale disponibile */
+            align-content: center; /* Centra il blocco dei bottoni verticalmente */
         }
 
         .menu-tile {
             background: rgba(255, 255, 255, 0.05);
-            border: 2px solid rgba(77, 136, 255, 0.3);
-            border-radius: 15px;
-            padding: 30px 10px;
+            border: 0.2vh solid rgba(77, 136, 255, 0.3);
+            border-radius: 1.5vh;
+            padding: 2vh 1vw;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -949,35 +951,41 @@
             .menu-tile:hover {
                 background: rgba(77, 136, 255, 0.2);
                 border-color: #00ffcc;
-                transform: translateY(-10px);
-                box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+                transform: translateY(-0.5vh);
+                box-shadow: 0 1vh 2.5vh rgba(0, 0, 0, 0.5);
             }
 
         .menu-icon {
-            font-size: 50px;
-            margin-bottom: 15px;
+            font-size: 5.5vh; /* Le emoji useranno questa altezza */
+            margin-bottom: 1.5vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
             .menu-icon img {
-                width: 60px;
-                height: 60px;
+                height: 6vh; /* Le immagini PNG useranno questa altezza */
+                width: auto;
                 object-fit: contain;
             }
 
         .menu-label {
             color: #ffffff;
             font-weight: bold;
-            font-size: 1.8vh;
+            font-size: 1.6vh;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.1vw;
+            text-align: center;
         }
 
         .menu-footer {
-            margin-top: 60px;
+            margin-top: 2vh;
             color: #4d88ff;
-            font-size: 1.4vh;
-            border-top: 1px solid rgba(77, 136, 255, 0.2);
-            padding-top: 20px;
+            font-size: 1.5vh;
+            border-top: 0.1vh solid rgba(77, 136, 255, 0.2);
+            padding-top: 1.5vh;
+            width: 100%;
+            flex-shrink: 0; /* Impedisce allo schiacciamento di far sparire il footer */
         }
 
         /* Adattamento per tasto HOME nella cassa */
