@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -358,21 +358,21 @@
     </div>
 
     <div class="modal-overlay" id="modal-contabilita">
-        <div class="modal-box modal-grande modal-full" style="flex-direction: column;">
+        <div class="modal-box modal-grande modal-full" style="flex-direction: column; gap: 5px;">
 
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #4d88ff; padding-bottom: 10px; margin-bottom: 15px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #4d88ff; padding-bottom: 5px; margin-bottom: 5px;">
                 <div class="modal-titolo" style="margin: 0;">🧾 RICERCA AVANZATA CONTABILITÀ</div>
                 <button class="btn-modal btn-grigio" onclick="chiudiModulo('modal-contabilita')">CHIUDI</button>
             </div>
 
-            <div style="display: flex; gap: 10px; margin-bottom: 15px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px;">
+            <div style="display: flex; gap: 10px; margin-bottom: 5px; background: rgba(0,0,0,0.3); padding: 8px 10px; border-radius: 8px; align-items: flex-end;">
                 <div style="flex: 0.5;">
-                    <label class="crm-label" style="font-size: 1.5vh;">Mese</label>
-                    <input type="month" id="cont-mese" class="crm-input" style="padding: 8px; font-size: 2vh;">
+                    <label class="crm-label" style="font-size: 1.4vh; margin-bottom: 4px;">Mese</label>
+                    <input type="month" id="cont-mese" class="crm-input" style="height: 38px; box-sizing: border-box; padding: 8px; font-size: 1.8vh; margin: 0;">
                 </div>
                 <div style="flex: 1;">
-                    <label class="crm-label" style="font-size: 1.5vh;">Tipo Operazione</label>
-                    <select id="cont-filtro-tipo" class="crm-input" style="padding: 8px; font-size: 2vh; cursor: pointer;">
+                    <label class="crm-label" style="font-size: 1.4vh; margin-bottom: 4px;">Tipo Operazione</label>
+                    <select id="cont-filtro-tipo" class="crm-input" style="height: 38px; box-sizing: border-box; padding: 8px; font-size: 1.8vh; cursor: pointer; margin: 0;">
                         <option value="TUTTI">Tutto lo storico</option>
                         <option value="MULTIPLE">Scontrini: Vendite Multiple</option>
                         <option value="BONUS">Scontrini: Bonus Utilizzato</option>
@@ -381,23 +381,41 @@
                     </select>
                 </div>
                 <div style="flex: 1;">
-                    <label class="crm-label" style="font-size: 1.5vh;">Cerca Prodotto</label>
-                    <input type="text" id="cont-cerca-prod" class="crm-input" style="padding: 8px; font-size: 2vh;" placeholder="Es. Olio CBD">
+                    <label class="crm-label" style="font-size: 1.4vh; margin-bottom: 4px;">Cerca Prodotto</label>
+                    <input type="text" id="cont-cerca-prod" class="crm-input" style="height: 38px; box-sizing: border-box; padding: 8px; font-size: 1.8vh; margin: 0;" placeholder="Es. Olio CBD">
                 </div>
                 <div style="flex: 1;">
-                    <label class="crm-label" style="font-size: 1.5vh;">Cerca Cliente (Nome)</label>
-                    <input type="text" id="cont-cerca-nome" class="crm-input" style="padding: 8px; font-size: 2vh;" placeholder="Es. Mario">
+                    <label class="crm-label" style="font-size: 1.4vh; margin-bottom: 4px;">Cerca Cliente (Nome)</label>
+                    <input type="text" id="cont-cerca-nome" class="crm-input" style="height: 38px; box-sizing: border-box; padding: 8px; font-size: 1.8vh; margin: 0;" placeholder="Es. Mario">
                 </div>
                 <div style="flex: 1;">
-                    <label class="crm-label" style="font-size: 1.5vh;">Cerca Telefono / Scheda</label>
-                    <input type="text" id="cont-cerca-tel" class="crm-input" style="padding: 8px; font-size: 2vh;" placeholder="Es. 333...">
+                    <label class="crm-label" style="font-size: 1.4vh; margin-bottom: 4px;">Cerca Tel / Scheda</label>
+                    <input type="text" id="cont-cerca-tel" class="crm-input" style="height: 38px; box-sizing: border-box; padding: 8px; font-size: 1.8vh; margin: 0;" placeholder="Es. 333...">
                 </div>
             </div>
 
-            <div class="testata-tabella" style="grid-template-columns: 1fr 1fr 2fr 1.5fr 1fr 1fr; background: #002b5e; color: white;">
-                <div>DATA E ORA</div><div>TIPO</div><div>CLIENTE / DESCRIZIONE</div><div>PAGAMENTO</div><div>PUNTI / BONUS</div><div>TOTALE</div>
-            </div>
-            <div class="area-dati-tabella" id="cont-lista-risultati" style="flex-grow: 1; background: rgba(0,0,0,0.5); border-radius: 0 0 4px 4px; padding: 5px;">
+            <div style="display: flex; flex-direction: column; flex-grow: 1; gap: 0; overflow: hidden;">
+
+                <div class="testata-tabella" style="grid-template-columns: 0.6fr 0.8fr 0.8fr 2.5fr 1fr 1fr 0.6fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr; background: #002b5e; color: white; font-size: 1.3vh; padding: 8px 5px; margin: 0; border-radius: 4px 4px 0 0;">
+                    <div class="col-centro">MESE</div>
+                    <div class="col-centro">GIORNO</div>
+                    <div class="col-centro">ORA</div>
+                    <div style="text-align:left;">DESCRIZIONE</div>
+                    <div class="col-centro">CATEG.</div>
+                    <div class="col-valuta" style="color: white;">IMPORTO</div>
+                    <div class="col-centro">Q.TÀ</div>
+                    <div class="col-valuta" style="color: white;">CONTANTI</div>
+                    <div class="col-valuta" style="color: white;">POS</div>
+                    <div class="col-valuta" style="color: white;">BONUS</div>
+                    <div class="col-centro">S. INIZ.</div>
+                    <div class="col-centro">P. CARIC.</div>
+                    <div class="col-centro">P. SCARIC.</div>
+                    <div class="col-centro">S. FIN.</div>
+                </div>
+
+                <div class="area-dati-tabella" id="cont-lista-risultati" style="flex-grow: 1; background: rgba(0,0,0,0.5); border-radius: 0 0 4px 4px; padding: 0; margin: 0; overflow-y: auto;">
+                </div>
+
             </div>
         </div>
     </div>
