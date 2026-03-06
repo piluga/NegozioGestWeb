@@ -44,7 +44,10 @@ function initDB() {
             db = event.target.result;
             popolaDBSeVuoto().then(() => resolve());
             // Avvia la sincronizzazione silenziosa in background
-            setTimeout(() => { scaricaClientiDalCloud(); }, 4000); // Aspetta 4 secondi per non rallentare l'apertura dell'app
+            setTimeout(() => {
+                scaricaClientiDalCloud();
+                scaricaMagazzinoDalCloud(); // <--- AGGIUNTO
+            }, 4000);
         };
 
         request.onerror = function (event) { reject("Errore DB: " + event.target.errorCode); };
@@ -646,12 +649,20 @@ window.eseguiEliminazioneUniversale = async function () {
 
     if (tipoEliminazione === 'CLIENTE') {
         await deleteRecord('clienti', idDaEliminare);
+
+        // 🔥 CLOUD-SYNC: Elimina definitivamente anche dal Cloud
+        if (navigator.onLine) fetch(`${FIREBASE_URL}/clienti/${idDaEliminare}.json`, { method: 'DELETE' }).catch(e => console.log(e));
+
         crmNuovoCliente();
         await crmCaricaLista();
         mostraMessaggio("CLIENTE ELIMINATO");
 
     } else if (tipoEliminazione === 'PRODOTTO') {
         await deleteRecord('magazzino', idDaEliminare);
+
+        // 🔥 CLOUD-SYNC: Elimina definitivamente anche dal Cloud
+        if (navigator.onLine) fetch(`${FIREBASE_URL}/magazzino/${idDaEliminare}.json`, { method: 'DELETE' }).catch(e => console.log(e));
+
         magNuovoProdotto();
         await magCaricaLista();
         mostraMessaggio("PRODOTTO ELIMINATO");
@@ -1716,6 +1727,12 @@ window.magSalvaProdotto = async function () {
     store.put(nuovoProdotto); // Upsert automatico
 
     tx.oncomplete = async () => {
+
+        // 🔥 CLOUD-SYNC: Spara il prodotto al cloud appena salvato in locale
+        if (typeof salvaProdottoCloud === "function") {
+            salvaProdottoCloud(nuovoProdotto);
+        }
+
         document.getElementById('mag-titolo-scheda').textContent = "✅ SALVATO!";
         document.getElementById('mag-titolo-scheda').style.color = "#00ff00";
         setTimeout(() => {
@@ -2448,6 +2465,86 @@ window.scaricaClientiDalCloud = async function () {
         console.error("Errore download cloud clienti:", e);
     }
 };
+
+// ==========================================
+// ☁️ CLOUD-SYNC: MOTORE BIDIREZIONALE MAGAZZINO
+// ==========================================
+
+// 1. SPINGE il prodotto sul Cloud (Creazione / Modifica)
+window.salvaProdottoCloud = async function (prodotto) {
+    if (!navigator.onLine) return;
+
+    prodotto.timestamp_sync = Date.now(); // Timbro orario
+    const url = `${FIREBASE_URL}/magazzino/${prodotto.codice}.json`;
+
+    try {
+        await fetch(url, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(prodotto)
+        });
+        console.log(`☁️ Sync UP: Prodotto [${prodotto.codice}] inviato al cloud.`);
+    } catch (e) {
+        console.error("Errore salvataggio cloud prodotto:", e);
+    }
+};
+
+// 2. TIRA GIÙ i prodotti dal Cloud
+window.scaricaMagazzinoDalCloud = async function () {
+    if (!navigator.onLine) return;
+
+    const url = `${FIREBASE_URL}/magazzino.json`;
+
+    try {
+        let response = await fetch(url);
+        let magazzinoCloud = await response.json();
+
+        if (magazzinoCloud) {
+            let dbMagazzinoLocale = await getAll('magazzino');
+            let tx = db.transaction('magazzino', 'readwrite');
+            let store = tx.objectStore('magazzino');
+            let aggiornamentiFatti = 0;
+
+            Object.keys(magazzinoCloud).forEach(codice => {
+                let prodCloud = magazzinoCloud[codice];
+
+                // Ignora dati corrotti
+                if (!prodCloud || !prodCloud.codice || !prodCloud.descrizione) return;
+
+                let prodLocale = dbMagazzinoLocale.find(p => p.codice === prodCloud.codice);
+
+                let nonEsiste = !prodLocale;
+                let cloudPiuRecente = prodLocale && prodCloud.timestamp_sync && (!prodLocale.timestamp_sync || prodCloud.timestamp_sync > prodLocale.timestamp_sync);
+
+                if (nonEsiste || cloudPiuRecente) {
+                    store.put(prodCloud);
+                    aggiornamentiFatti++;
+                }
+            });
+
+            if (aggiornamentiFatti > 0) {
+                console.log(`☁️ Sync DOWN: Scaricati e aggiornati ${aggiornamentiFatti} prodotti dal cloud.`);
+                // Aggiorna la UI se siamo nella schermata Magazzino
+                if (document.getElementById('modal-magazzino').style.display !== 'none') {
+                    magCaricaLista();
+                }
+            }
+        }
+    } catch (e) {
+        console.error("Errore download cloud magazzino:", e);
+    }
+};
+
+// ==========================================
+// ⏱️ AUTO-SYNC IN BACKGROUND (Ogni 60 secondi)
+// ==========================================
+setInterval(() => {
+    // Scarica i dati in silenzio senza disturbare l'operatore
+    if (navigator.onLine) {
+        scaricaClientiDalCloud();
+        scaricaMagazzinoDalCloud();
+    }
+}, 60000);
 
 // ==========================================
 // 🛡️ FILTRO GLOBALE CAMPI NUMERICI E IMPORTI
