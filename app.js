@@ -2414,7 +2414,15 @@ window.scaricaClientiDalCloud = async function () {
             let aggiornamentiFatti = 0;
 
             // Confrontiamo il Cloud con il Locale
-            Object.values(clientiCloud).forEach(clienteCloud => {
+            Object.keys(clientiCloud).forEach(numeroScheda => {
+                let clienteCloud = clientiCloud[numeroScheda];
+
+                // 🌟 FIX FONDAMENTALE: Ignora i vecchi dati parziali di Firebase
+                // Se il record non ha il numero di scheda o il nome, è un vecchio residuo e lo saltiamo!
+                if (!clienteCloud || !clienteCloud.scheda || !clienteCloud.nome) {
+                    return;
+                }
+
                 // Cerca se abbiamo già questo cliente nel PC attuale
                 let clienteLocale = dbClientiLocali.find(c => c.scheda === clienteCloud.scheda);
 
@@ -2430,9 +2438,9 @@ window.scaricaClientiDalCloud = async function () {
 
             if (aggiornamentiFatti > 0) {
                 console.log(`☁️ Sync DOWN: Scaricati e aggiornati ${aggiornamentiFatti} clienti dal cloud.`);
-                // Aggiorna la tabella a schermo se l'utente è nella scheda clienti
-                if (document.getElementById('modal-clienti').style.display !== 'none') {
-                    popolaTabellaClienti();
+                // Aggiorna la tabella a schermo se l'utente ha la modale aperta (nessun alert di sistema)
+                if (document.getElementById('modal-gestione-clienti').style.display !== 'none') {
+                    crmCaricaLista();
                 }
             }
         }
