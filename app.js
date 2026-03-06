@@ -1934,7 +1934,14 @@ window.gestisciImportazioneCSV = function (event, tabella) {
                 let tx = db.transaction('magazzino', 'readwrite');
                 let store = tx.objectStore('magazzino');
                 let nuovoProdotto = { codice: codice, descrizione: descrizione.toUpperCase(), categoria: categoria.toUpperCase(), giacenza: giacenza, prezzoAcquisto: prezzoAcq, prezzo: prezzoVen, tipo: "PZ" };
+
                 store.put(nuovoProdotto);
+
+                // 🔥 CLOUD-SYNC: Invia il prodotto a Firebase anche durante l'importazione!
+                if (typeof salvaProdottoCloud === "function") {
+                    salvaProdottoCloud(nuovoProdotto);
+                }
+
                 conteggioAggiunti++;
             }
             // IMPORTAZIONE STORICO VENDITE
