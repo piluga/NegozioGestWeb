@@ -1021,55 +1021,103 @@ function disegnaTabellaContabilita(arrayDati) {
         return;
     }
 
-    arrayDati.forEach((item, index) => {
-        let div = document.createElement('div');
+    const nomiMesi = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"];
+    const gridStyle = '0.6fr 0.8fr 0.8fr 2.5fr 1fr 1fr 0.6fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr';
 
-        // Nuovi stili "Dark Mode" svincolati dal CSS base
-        div.style.display = 'grid';
-        div.style.gridTemplateColumns = '1fr 1fr 2fr 1.5fr 1fr 1fr';
-        div.style.padding = '10px 5px';
-        div.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
-        div.style.fontSize = '2vh';
-        div.style.alignItems = 'center';
-        div.style.color = '#ffffff'; // Testo bianco di base per renderlo super leggibile
-        div.style.transition = 'background-color 0.1s';
-
-        let dataIT = item.data.split('-').reverse().join('/');
+    arrayDati.forEach((item) => {
+        let dataParti = item.data.split('-');
+        let meseTesto = nomiMesi[parseInt(dataParti[1]) - 1];
+        let giornoIT = `${dataParti[2]}/${dataParti[1]}/${dataParti[0]}`;
 
         if (item.sorgente === 'vendita') {
-            div.style.cursor = 'pointer';
-            // Effetto Hover elegante per le righe cliccabili
-            div.onmouseover = function () { this.style.backgroundColor = 'rgba(255,255,255,0.2)'; }
-            div.onmouseout = function () { this.style.backgroundColor = 'transparent'; }
+            let bonusUsato = item.bonus || 0;
 
-            let btnDettaglio = `<span style="font-size: 1.5vh; background: #4d88ff; padding: 2px 6px; border-radius: 3px; color: white; margin-left: 8px;">👁️ VEDI</span>`;
+            if (item.articoli && item.articoli.length > 0) {
+                item.articoli.forEach((art, idx) => {
+                    let div = document.createElement('div');
+                    div.style.display = 'grid';
+                    div.style.gridTemplateColumns = gridStyle;
+                    div.style.padding = '10px 5px';
+                    div.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
+                    div.style.fontSize = '1.5vh';
+                    div.style.alignItems = 'center';
+                    div.style.color = '#ffffff';
+                    div.style.transition = 'background-color 0.1s';
+                    div.style.cursor = 'pointer';
 
-            div.innerHTML = `
-                            <div class="col-sinistra" style="color: #b3d9ff;">${dataIT} ${item.ora}</div>
-                            <div class="col-centro" style="color: #00cc66; font-weight: bold;">VENDITA</div>
-                            <div class="col-sinistra">${item.cliente} ${btnDettaglio}</div>
-                            <div class="col-centro">${item.pagamento}</div>
-                            <div class="col-centro" style="color: #ffcc00;">+${item.puntiCaricati} PTS</div>
-                            <div class="col-valuta" style="font-size: 2.2vh;">€ ${item.totale.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
-                        `;
+                    div.onmouseover = function () { this.style.backgroundColor = 'rgba(255,255,255,0.2)'; }
+                    div.onmouseout = function () { this.style.backgroundColor = 'transparent'; }
 
-            div.addEventListener('click', () => apriDettaglioScontrino(item.raw));
+                    // Mostra i totali solo sulla prima riga per evitare duplicati visivi
+                    let strContanti = idx === 0 ? `€ ${item.raw.CONTANTI.toLocaleString('it-IT', { minimumFractionDigits: 2 })}` : "-";
+                    let strPos = idx === 0 ? `€ ${item.raw.POS.toLocaleString('it-IT', { minimumFractionDigits: 2 })}` : "-";
+                    let strBonus = idx === 0 && bonusUsato > 0 ? `-€ ${bonusUsato.toLocaleString('it-IT', { minimumFractionDigits: 2 })}` : (idx === 0 ? "€ 0,00" : "-");
 
+                    let strSIniz = idx === 0 ? (item.raw.SALDO_PUNTI_INIZIALE !== undefined ? item.raw.SALDO_PUNTI_INIZIALE : "-") : "-";
+                    let strPCaric = idx === 0 ? `+${item.raw.PUNTI_CARICATI}` : "-";
+                    let strPScaric = idx === 0 ? `-${item.raw.PUNTI_SCARICATI}` : "-";
+                    let strSFin = idx === 0 ? (item.raw.SALDO_PUNTI_FINALE !== undefined ? item.raw.SALDO_PUNTI_FINALE : "-") : "-";
+
+                    let desc = art.DESCRIZIONE;
+                    if (idx === 0) desc += ` <span style="font-size: 1.2vh; background: #4d88ff; padding: 2px 4px; border-radius: 3px; color: white; margin-left: 5px;" title="Vedi Dettaglio">👁️</span>`;
+
+                    div.innerHTML = `
+                                <div class="col-centro" style="color: #b3d9ff;">${meseTesto}</div>
+                                <div class="col-centro">${giornoIT}</div>
+                                <div class="col-centro">${item.ora}</div>
+                                <div class="col-sinistra" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${art.DESCRIZIONE}">${desc}</div>
+                                <div class="col-centro">${art.CATEGORIA || '-'}</div>
+                                <div class="col-valuta" style="color: #00ffcc;">€ ${art.IMPORTO.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                                <div class="col-centro">${art.QUANTITA}</div>
+                                
+                                <div class="col-valuta" style="color: #ffcc00;">${strContanti}</div>
+                                <div class="col-valuta" style="color: #ffcc00;">${strPos}</div>
+                                <div class="col-valuta" style="color: #ff6666;">${strBonus}</div>
+                                
+                                <div class="col-centro">${strSIniz}</div>
+                                <div class="col-centro" style="color: #00cc66;">${strPCaric}</div>
+                                <div class="col-centro" style="color: #ff4d4d;">${strPScaric}</div>
+                                <div class="col-centro" style="font-weight: bold;">${strSFin}</div>
+                            `;
+
+                    div.addEventListener('click', () => apriDettaglioScontrino(item.raw));
+                    contListaRisultati.appendChild(div);
+                });
+            }
         } else {
-            div.style.cursor = 'default';
+            // MOVIMENTO (Entrata / Uscita)
+            let div = document.createElement('div');
+            div.style.display = 'grid';
+            div.style.gridTemplateColumns = gridStyle;
+            div.style.padding = '10px 5px';
+            div.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
+            div.style.fontSize = '1.5vh';
+            div.style.alignItems = 'center';
+            div.style.color = '#ffffff';
+
             let coloreTipo = item.tipoMov === 'ENTRATA' ? '#00cc66' : '#ff4d4d';
+            let segno = item.tipoMov === 'ENTRATA' ? '+' : '-';
 
             div.innerHTML = `
-                            <div class="col-sinistra" style="color: #b3d9ff;">${dataIT} ${item.ora}</div>
-                            <div class="col-centro" style="color: ${coloreTipo}; font-weight: bold;">${item.tipoMov}</div>
-                            <div class="col-sinistra">${item.descrizione}</div>
-                            <div class="col-centro">-</div>
-                            <div class="col-centro">-</div>
-                            <div class="col-valuta" style="color: ${coloreTipo}; font-size: 2.2vh;">€ ${item.totale.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
-                        `;
+                        <div class="col-centro" style="color: #b3d9ff;">${meseTesto}</div>
+                        <div class="col-centro">${giornoIT}</div>
+                        <div class="col-centro">${item.ora}</div>
+                        <div class="col-sinistra" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.descrizione}</div>
+                        <div class="col-centro" style="color: ${coloreTipo}; font-weight: bold;">${item.tipoMov}</div>
+                        <div class="col-valuta" style="color: ${coloreTipo};">€ ${item.totale.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                        <div class="col-centro">-</div>
+                        
+                        <div class="col-valuta" style="color: ${coloreTipo};">${item.tipoMov === 'ENTRATA' ? segno : ''}€ ${item.totale.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                        <div class="col-valuta">-</div>
+                        <div class="col-valuta">-</div>
+                        
+                        <div class="col-centro">-</div>
+                        <div class="col-centro">-</div>
+                        <div class="col-centro">-</div>
+                        <div class="col-centro">-</div>
+                    `;
+            contListaRisultati.appendChild(div);
         }
-
-        contListaRisultati.appendChild(div);
     });
 }
 
