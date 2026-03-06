@@ -3,20 +3,6 @@ const DB_NAME = 'CassaPWA_DB';
 const DB_VERSION = 3;
 let db;
 
-const semiMagazzino = [
-    { codice: "10056", descrizione: "Caffè Espresso", giacenza: 150, prezzo: 1.00, categoria: "Bar", tipo: "PZ" },
-    { codice: "890123", descrizione: "Cornetto Crema", giacenza: 24, prezzo: 1.20, categoria: "Pasticceria", tipo: "PZ" },
-    { codice: "111", descrizione: "Acqua Naturale 50cl", giacenza: 100, prezzo: 1.00, categoria: "Bevande", tipo: "PZ" },
-    { codice: "999", descrizione: "Olio Rilassante CBD 10%", giacenza: 50, prezzo: 30.00, categoria: "CBD", tipo: "PZ" },
-    { codice: "888", descrizione: "Vaporizzatore HHC", giacenza: 20, prezzo: 40.00, categoria: "HHC", tipo: "PZ" }
-];
-
-const semiClienti = [
-    { scheda: "1815605673045", nome: "AAAAA AAAAA", telefono: "1111111111", punti: 75.5, dataUltimaOperazione: "2025-12-01", bonus: 0 },
-    { scheda: "7668343613474", nome: "AGNELLO DAVID", telefono: "1111111111", punti: 101, dataUltimaOperazione: "2026-02-16", bonus: 10 },
-    { scheda: "8214343205347", nome: "VINCENZO STANCAMPIANO", telefono: "1111111111", punti: 1225, dataUltimaOperazione: "2025-08-18", bonus: 120 }
-];
-
 function initDB() {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -42,7 +28,6 @@ function initDB() {
 
         request.onsuccess = function (event) {
             db = event.target.result;
-            popolaDBSeVuoto().then(() => resolve());
             // Avvia la sincronizzazione silenziosa in background
             setTimeout(() => {
                 scaricaClientiDalCloud();
@@ -52,19 +37,6 @@ function initDB() {
 
         request.onerror = function (event) { reject("Errore DB: " + event.target.errorCode); };
     });
-}
-
-async function popolaDBSeVuoto() {
-    let tx = db.transaction(['magazzino', 'clienti'], 'readwrite');
-    let storeMagazzino = tx.objectStore('magazzino');
-    let storeClienti = tx.objectStore('clienti');
-    let requestCount = storeMagazzino.count();
-    requestCount.onsuccess = function () {
-        if (requestCount.result === 0) {
-            semiMagazzino.forEach(item => storeMagazzino.put(item));
-            semiClienti.forEach(cliente => storeClienti.put(cliente));
-        }
-    };
 }
 
 // Helpers DB
