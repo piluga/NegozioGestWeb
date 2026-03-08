@@ -28,10 +28,13 @@ function initDB() {
 
         request.onsuccess = function (event) {
             db = event.target.result;
+
+            resolve(); // <--- MANCAVA QUESTO COMANDO VITALE! Sblocca l'avvio dell'app.
+
             // Avvia la sincronizzazione silenziosa in background
             setTimeout(() => {
                 scaricaClientiDalCloud();
-                scaricaMagazzinoDalCloud(); // <--- AGGIUNTO
+                scaricaMagazzinoDalCloud();
             }, 4000);
         };
 
@@ -58,7 +61,13 @@ function updateCliente(cliente) {
 }
 function deleteRecord(storeName, key) { return new Promise((resolve) => { let tx = db.transaction(storeName, 'readwrite'); tx.objectStore(storeName).delete(key); tx.oncomplete = () => resolve(); }); }
 function salvaVendita(recordVendita) { return new Promise((resolve) => { let tx = db.transaction('vendite', 'readwrite'); tx.objectStore('vendite').add(recordVendita); tx.oncomplete = () => resolve(); }); }
-function salvaMovimentoCassaDB(movimento) { return new Promise((resolve) => { let tx = db.transaction('movimenti_cassa', 'readwrite'); tx.objectStore('movimenti_cassa').add(movimento); tx.oncomplete = () => resolve(); }); }
+function salvaMovimentoCassaDB(movimento) {
+    return new Promise((resolve) => {
+        let tx = db.transaction('movimenti_cassa', 'readwrite');
+        let request = tx.objectStore('movimenti_cassa').add(movimento);
+        request.onsuccess = (e) => resolve(e.target.result); // Restituisce l'ID per Firebase
+    });
+}
 function getRecordById(storeName, id) { return new Promise((resolve) => { let tx = db.transaction(storeName, 'readonly'); let request = tx.objectStore(storeName).get(id); request.onsuccess = () => resolve(request.result); }); }
 
 // Helper Data
@@ -748,7 +757,14 @@ window.salvaSpesa = async function () {
     if (isNaN(importo) || importo <= 0) { mostraAvvisoModale("Inserisci un importo valido!"); return; } if (!dataSelezionata) { mostraAvvisoModale("Seleziona una data valida!"); return; }
     let d = new Date(); let hh = String(d.getHours()).padStart(2, '0'); let min = String(d.getMinutes()).padStart(2, '0');
     let nuovoMovimento = { data: dataSelezionata, ora: `${hh}:${min}`, tipo: "USCITA", importo: importo, descrizione: desc };
-    await salvaMovimentoCassaDB(nuovoMovimento); chiudiModale('modal-spesa'); mostraMessaggio("SPESA REGISTRATA CON SUCCESSO");
+
+    // Salva nel PC e recupera l'ID
+    nuovoMovimento.id = await salvaMovimentoCassaDB(nuovoMovimento);
+
+    // 🔥 INVIA AL CRUSCOTTO FIREBASE
+    if (typeof inviaMovimentoLive === "function") inviaMovimentoLive(nuovoMovimento);
+
+    chiudiModale('modal-spesa'); mostraMessaggio("SPESA REGISTRATA CON SUCCESSO");
 };
 
 window.salvaDistributore = async function () {
@@ -756,7 +772,14 @@ window.salvaDistributore = async function () {
     if (isNaN(importo) || importo <= 0) { mostraAvvisoModale("Inserisci un importo valido!"); return; } if (!dataSelezionata) { mostraAvvisoModale("Seleziona una data valida!"); return; }
     let d = new Date(); let hh = String(d.getHours()).padStart(2, '0'); let min = String(d.getMinutes()).padStart(2, '0');
     let nuovoMovimento = { data: dataSelezionata, ora: `${hh}:${min}`, tipo: "ENTRATA", importo: importo, descrizione: "Incasso Distributore" };
-    await salvaMovimentoCassaDB(nuovoMovimento); chiudiModale('modal-distributore'); mostraMessaggio("INCASSO DISTRIBUTORE REGISTRATO");
+
+    // Salva nel PC e recupera l'ID
+    nuovoMovimento.id = await salvaMovimentoCassaDB(nuovoMovimento);
+
+    // 🔥 INVIA AL CRUSCOTTO FIREBASE
+    if (typeof inviaMovimentoLive === "function") inviaMovimentoLive(nuovoMovimento);
+
+    chiudiModale('modal-distributore'); mostraMessaggio("INCASSO DISTRIBUTORE REGISTRATO");
 };
 
 // ==========================================
@@ -1021,71 +1044,95 @@ function disegnaTabellaContabilita(arrayDati) {
         return;
     }
 
-    const nomiMesi = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"];
-    const gridStyle = '0.6fr 0.8fr 0.8fr 2.5fr 1fr 1fr 0.6fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr';
+    arrayDati.sort((a, b) => {
+        let dataOraA = a.data + "T" + (a.ora || "00:00");
+        let dataOraB = b.data + "T" + (b.ora || "00:00");
+        if (dataOraA < dataOraB) return -1;
+        if (dataOraA > dataOraB) return 1;
+        return 0;
+    });
+
+    const gridStyle = '1.5fr 0.8fr 0.8fr 2fr 1fr 1fr 0.6fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr';
 
     arrayDati.forEach((item) => {
         let dataParti = item.data.split('-');
-        let meseTesto = nomiMesi[parseInt(dataParti[1]) - 1];
         let giornoIT = `${dataParti[2]}/${dataParti[1]}/${dataParti[0]}`;
 
         if (item.sorgente === 'vendita') {
             let bonusUsato = item.bonus || 0;
 
             if (item.articoli && item.articoli.length > 0) {
-                item.articoli.forEach((art, idx) => {
-                    let div = document.createElement('div');
-                    div.style.display = 'grid';
-                    div.style.gridTemplateColumns = gridStyle;
-                    div.style.padding = '10px 5px';
-                    div.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
-                    div.style.fontSize = '1.5vh';
-                    div.style.alignItems = 'center';
-                    div.style.color = '#ffffff';
-                    div.style.transition = 'background-color 0.1s';
-                    div.style.cursor = 'pointer';
+                // Stampiamo UNA SOLA RIGA per l'intero scontrino
+                let div = document.createElement('div');
+                div.style.display = 'grid';
+                div.style.gridTemplateColumns = gridStyle;
+                div.style.padding = '10px 5px';
+                div.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
+                div.style.fontSize = '1.5vh';
+                div.style.alignItems = 'center';
+                div.style.color = '#ffffff';
+                div.style.transition = 'background-color 0.1s';
+                div.style.cursor = 'pointer';
 
-                    div.onmouseover = function () { this.style.backgroundColor = 'rgba(255,255,255,0.2)'; }
-                    div.onmouseout = function () { this.style.backgroundColor = 'transparent'; }
+                div.onmouseover = function () { this.style.backgroundColor = 'rgba(255,255,255,0.2)'; }
+                div.onmouseout = function () { this.style.backgroundColor = 'transparent'; }
 
-                    // Mostra i totali solo sulla prima riga per evitare duplicati visivi
-                    let strContanti = idx === 0 ? `€ ${item.raw.CONTANTI.toLocaleString('it-IT', { minimumFractionDigits: 2 })}` : "-";
-                    let strPos = idx === 0 ? `€ ${item.raw.POS.toLocaleString('it-IT', { minimumFractionDigits: 2 })}` : "-";
-                    let strBonus = idx === 0 && bonusUsato > 0 ? `-€ ${bonusUsato.toLocaleString('it-IT', { minimumFractionDigits: 2 })}` : (idx === 0 ? "€ 0,00" : "-");
+                let strContanti = `€ ${item.raw.CONTANTI.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+                let strPos = `€ ${item.raw.POS.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+                let strBonus = bonusUsato > 0 ? `-€ ${bonusUsato.toLocaleString('it-IT', { minimumFractionDigits: 2 })}` : "€ 0,00";
 
-                    let strSIniz = idx === 0 ? (item.raw.SALDO_PUNTI_INIZIALE !== undefined ? item.raw.SALDO_PUNTI_INIZIALE : "-") : "-";
-                    let strPCaric = idx === 0 ? `+${item.raw.PUNTI_CARICATI}` : "-";
-                    let strPScaric = idx === 0 ? `-${item.raw.PUNTI_SCARICATI}` : "-";
-                    let strSFin = idx === 0 ? (item.raw.SALDO_PUNTI_FINALE !== undefined ? item.raw.SALDO_PUNTI_FINALE : "-") : "-";
+                let strSIniz = item.raw.SALDO_PUNTI_INIZIALE !== undefined ? item.raw.SALDO_PUNTI_INIZIALE : "-";
+                let strPCaric = `+${item.raw.PUNTI_CARICATI}`;
+                let strPScaric = `-${item.raw.PUNTI_SCARICATI}`;
+                let strSFin = item.raw.SALDO_PUNTI_FINALE !== undefined ? item.raw.SALDO_PUNTI_FINALE : "-";
 
-                    let desc = art.DESCRIZIONE;
-                    if (idx === 0) desc += ` <span style="font-size: 1.2vh; background: #4d88ff; padding: 2px 4px; border-radius: 3px; color: white; margin-left: 5px;" title="Vedi Dettaglio">👁️</span>`;
+                let strCliente = item.cliente;
 
-                    div.innerHTML = `
-                                <div class="col-centro" style="color: #b3d9ff;">${meseTesto}</div>
-                                <div class="col-centro">${giornoIT}</div>
-                                <div class="col-centro">${item.ora}</div>
-                                <div class="col-sinistra" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${art.DESCRIZIONE}">${desc}</div>
-                                <div class="col-centro">${art.CATEGORIA || '-'}</div>
-                                <div class="col-valuta" style="color: #00ffcc;">€ ${art.IMPORTO.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
-                                <div class="col-centro">${art.QUANTITA}</div>
-                                
-                                <div class="col-valuta" style="color: #ffcc00;">${strContanti}</div>
-                                <div class="col-valuta" style="color: #ffcc00;">${strPos}</div>
-                                <div class="col-valuta" style="color: #ff6666;">${strBonus}</div>
-                                
-                                <div class="col-centro">${strSIniz}</div>
-                                <div class="col-centro" style="color: #00cc66;">${strPCaric}</div>
-                                <div class="col-centro" style="color: #ff4d4d;">${strPScaric}</div>
-                                <div class="col-centro" style="font-weight: bold;">${strSFin}</div>
-                            `;
+                // Se è un solo articolo mostra il nome, altrimenti mostra VENDITA MULTIPLA per far quadrare i totali
+                let desc = "";
+                let cat = "";
+                let importoMerce = 0;
+                let quantitaTotale = 0;
 
-                    div.addEventListener('click', () => apriDettaglioScontrino(item.raw));
-                    contListaRisultati.appendChild(div);
-                });
+                if (item.articoli.length === 1) {
+                    desc = item.articoli[0].DESCRIZIONE;
+                    cat = item.articoli[0].CATEGORIA || '-';
+                    importoMerce = item.articoli[0].IMPORTO;
+                    quantitaTotale = item.articoli[0].QUANTITA;
+                } else {
+                    desc = `VENDITA MULTIPLA (${item.articoli.length} ART.)`;
+                    cat = "MULTIPLA";
+                    item.articoli.forEach(a => {
+                        importoMerce += a.IMPORTO;
+                        quantitaTotale += a.QUANTITA;
+                    });
+                }
+
+                desc += ` <span style="font-size: 1.2vh; background: #4d88ff; padding: 2px 4px; border-radius: 3px; color: white; margin-left: 5px;" title="Vedi Dettaglio">👁️</span>`;
+
+                div.innerHTML = `
+                            <div style="text-align: left !important; color: #b3d9ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${strCliente}">${strCliente}</div>
+                            <div style="text-align: center !important;">${giornoIT}</div>
+                            <div style="text-align: center !important;">${item.ora}</div>
+                            <div style="text-align: left !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="Clicca per i dettagli">${desc}</div>
+                            <div style="text-align: center !important;">${cat}</div>
+                            <div style="text-align: center !important; color: #00ffcc;">€ ${importoMerce.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                            <div style="text-align: center !important;">${quantitaTotale}</div>
+                            
+                            <div style="text-align: center !important; color: #ffcc00;">${strContanti}</div>
+                            <div style="text-align: center !important; color: #ffcc00;">${strPos}</div>
+                            
+                            <div style="text-align: center !important;">${strSIniz}</div>
+                            <div style="text-align: center !important; color: #00cc66;">${strPCaric}</div>
+                            <div style="text-align: center !important; color: #ff4d4d;">${strPScaric}</div>
+                            <div style="text-align: center !important; color: #ff6666;">${strBonus}</div>
+                            <div style="text-align: center !important; font-weight: bold;">${strSFin}</div>
+                        `;
+
+                div.addEventListener('click', () => apriDettaglioScontrino(item.raw));
+                contListaRisultati.appendChild(div);
             }
         } else {
-            // MOVIMENTO (Entrata / Uscita)
             let div = document.createElement('div');
             div.style.display = 'grid';
             div.style.gridTemplateColumns = gridStyle;
@@ -1099,22 +1146,22 @@ function disegnaTabellaContabilita(arrayDati) {
             let segno = item.tipoMov === 'ENTRATA' ? '+' : '-';
 
             div.innerHTML = `
-                        <div class="col-centro" style="color: #b3d9ff;">${meseTesto}</div>
-                        <div class="col-centro">${giornoIT}</div>
-                        <div class="col-centro">${item.ora}</div>
-                        <div class="col-sinistra" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.descrizione}</div>
-                        <div class="col-centro" style="color: ${coloreTipo}; font-weight: bold;">${item.tipoMov}</div>
-                        <div class="col-valuta" style="color: ${coloreTipo};">€ ${item.totale.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
-                        <div class="col-centro">-</div>
+                        <div style="text-align: center !important; color: #666;">-</div>
+                        <div style="text-align: center !important;">${giornoIT}</div>
+                        <div style="text-align: center !important;">${item.ora}</div>
+                        <div style="text-align: left !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.descrizione}</div>
+                        <div style="text-align: center !important; color: ${coloreTipo}; font-weight: bold;">${item.tipoMov}</div>
+                        <div style="text-align: center !important; color: ${coloreTipo};">€ ${item.totale.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                        <div style="text-align: center !important;">-</div>
                         
-                        <div class="col-valuta" style="color: ${coloreTipo};">${item.tipoMov === 'ENTRATA' ? segno : ''}€ ${item.totale.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
-                        <div class="col-valuta">-</div>
-                        <div class="col-valuta">-</div>
+                        <div style="text-align: center !important; color: ${coloreTipo};">${item.tipoMov === 'ENTRATA' ? segno : ''}€ ${item.totale.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                        <div style="text-align: center !important;">-</div>
                         
-                        <div class="col-centro">-</div>
-                        <div class="col-centro">-</div>
-                        <div class="col-centro">-</div>
-                        <div class="col-centro">-</div>
+                        <div style="text-align: center !important;">-</div>
+                        <div style="text-align: center !important;">-</div>
+                        <div style="text-align: center !important;">-</div>
+                        <div style="text-align: center !important;">-</div>
+                        <div style="text-align: center !important;">-</div>
                     `;
             contListaRisultati.appendChild(div);
         }
@@ -1490,10 +1537,15 @@ function aggiornaOrologio() {
         // 2. Chiude forzatamente qualsiasi finestra/registro aperto di ieri
         document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
 
-        // 3. Mostra l'avviso con la modale custom (nessun alert di sistema!)
-        mostraAvvisoModale("🌙 <b>CAMBIO GIORNO EFFETTUATO</b><br><br>È scattata la mezzanotte.<br>Il registro di cassa è stato azzerato ed è pronto per un nuovo foglio pulito.");
+        // 🔥 3. AZZERAMENTO FIREBASE (Svuota l'intero cruscotto online per il nuovo giorno)
+        if (navigator.onLine) {
+            fetch(`${FIREBASE_URL}/vendite_live.json`, { method: 'DELETE' }).catch(e => console.log(e));
+        }
 
-        // 4. Riporta l'operatore al menu principale per iniziare la giornata
+        // 4. Mostra l'avviso con la modale custom
+        mostraAvvisoModale("🌙 <b>CAMBIO GIORNO EFFETTUATO</b><br><br>È scattata la mezzanotte.<br>Il registro di cassa e il cruscotto online sono stati azzerati e preparati per oggi.");
+
+        // 5. Riporta l'operatore al menu principale per iniziare la giornata
         apriModale('modal-menu-principale');
     }
 }
@@ -1773,7 +1825,10 @@ const FIREBASE_URL = "https://fidelity-gestionale-default-rtdb.europe-west1.fire
 
 // 1. Aggiorna il nodo principale del cliente (Solo Punti e Data)
 async function aggiornaFidelityFirebase(numeroScheda, nuoviPunti, dataOperazione) {
-    if (!navigator.onLine) return; // Se siamo offline, salta l'invio online senza bloccarsi
+    if (!navigator.onLine) return;
+
+    // 🔥 FIX CRITICO: Scudo Anti-Orfani per Firebase
+    if (!numeroScheda || String(numeroScheda).trim() === '') return;
 
     const url = `${FIREBASE_URL}/clienti/${numeroScheda}/fidelity.json`;
     const payload = {
@@ -1796,10 +1851,12 @@ async function aggiornaFidelityFirebase(numeroScheda, nuoviPunti, dataOperazione
 async function firebasePushNotifiche(numeroScheda, saldoIniziale, puntiCaricati, puntiScaricati, saldoPunti, bonus) {
     if (!navigator.onLine) return;
 
+    // 🔥 FIX CRITICO: Scudo Anti-Orfani per Firebase
+    if (!numeroScheda || String(numeroScheda).trim() === '') return;
+
     const url = `${FIREBASE_URL}/clienti/${numeroScheda}/messaggi.json`;
     const oggi = new Date();
 
-    // FIX: Formato numerico con il PUNTO fisso e Timestamp in SECONDI
     const payload = {
         saldo_iniziale: saldoIniziale.toFixed(2),
         punti_caricati: puntiCaricati.toFixed(2),
@@ -1813,7 +1870,7 @@ async function firebasePushNotifiche(numeroScheda, saldoIniziale, puntiCaricati,
 
     try {
         await fetch(url, {
-            method: 'POST',
+            method: 'POST', // POST crea un nuovo ID univoco dentro la cartella messaggi
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
@@ -1947,6 +2004,8 @@ window.gestisciImportazioneCSV = function (event, tabella) {
         const intestazioni = righe[0].split(separatore).map(h => h.trim().replace(/"/g, '').toLowerCase());
 
         let conteggioAggiunti = 0;
+        let venditeDaSalvare = [];
+        let venditaCorrente = null;
 
         for (let i = 1; i < righe.length; i++) {
             const valori = righe[i].split(separatore).map(v => v.trim().replace(/"/g, ''));
@@ -1963,7 +2022,9 @@ window.gestisciImportazioneCSV = function (event, tabella) {
                 let nome = record.nome || record.cliente || "CLIENTE SENZA NOME";
                 let telefono = record.telefono || record.cellulare || record.tel || "";
                 let scheda = record.scheda || record.card || record.codice || ("200" + Math.floor(Math.random() * 10000000000).toString().padStart(10, '0'));
-                let punti = parseFloat((record.punti || "0").replace(',', '.')) || 0;
+
+                let strPunti = String(record.punti || "0").replace(/[^0-9,\-]/g, '').replace(',', '.');
+                let punti = parseFloat(strPunti) || 0;
                 let bonus = Math.floor(punti / 100) * 10;
 
                 let nuovoCliente = { scheda: scheda, nome: nome.toUpperCase(), telefono: telefono, punti: punti, bonus: bonus, dataUltimaOperazione: getOggiString() };
@@ -1975,9 +2036,14 @@ window.gestisciImportazioneCSV = function (event, tabella) {
                 let codice = record.codice || record.barcode || record.ean || ("210" + Math.floor(Math.random() * 10000000000).toString().padStart(10, '0'));
                 let descrizione = record.descrizione || record.articolo || record.nome || "ARTICOLO SCONOSCIUTO";
                 let categoria = record.categoria || record.reparto || "VARIE";
-                let giacenza = parseInt((record.giacenza || record.quantita || "0")) || 0;
-                let prezzoVen = parseFloat((record.prezzo || record.prezzovendita || record.listino || "0").replace(',', '.')) || 0;
-                let prezzoAcq = parseFloat((record.prezzoacquisto || record.costo || "0").replace(',', '.')) || 0;
+
+                let strGiac = String(record.giacenza || record.quantita || "0").replace(/[^0-9,\-]/g, '');
+                let strVen = String(record.prezzo || record.prezzovendita || record.listino || "0").replace(/[^0-9,\-]/g, '').replace(',', '.');
+                let strAcq = String(record.prezzoacquisto || record.costo || "0").replace(/[^0-9,\-]/g, '').replace(',', '.');
+
+                let giacenza = parseInt(strGiac) || 0;
+                let prezzoVen = parseFloat(strVen) || 0;
+                let prezzoAcq = parseFloat(strAcq) || 0;
 
                 let tx = db.transaction('magazzino', 'readwrite');
                 let store = tx.objectStore('magazzino');
@@ -1985,18 +2051,18 @@ window.gestisciImportazioneCSV = function (event, tabella) {
 
                 store.put(nuovoProdotto);
 
-                // 🔥 CLOUD-SYNC: Invia il prodotto a Firebase anche durante l'importazione!
+                // 🔥 CLOUD-SYNC
                 if (typeof salvaProdottoCloud === "function") {
                     salvaProdottoCloud(nuovoProdotto);
                 }
 
                 conteggioAggiunti++;
             }
-            // IMPORTAZIONE STORICO VENDITE
+            // IMPORTAZIONE STORICO VENDITE (Con raggruppamento Scontrini Multipli)
             else if (tabella === 'vendite') {
-                let dataExcel = record.data || record.giorno || getOggiString();
+                let isMultipla = (record.multiple || "").toLowerCase() === 'c';
+                let dataExcel = record.giorno || record.data || getOggiString();
 
-                // Convertitore automatico da formato Excel (DD/MM/YYYY) a formato App (YYYY-MM-DD)
                 if (dataExcel.includes('/')) {
                     let parti = dataExcel.split('/');
                     if (parti.length === 3) {
@@ -2009,53 +2075,82 @@ window.gestisciImportazioneCSV = function (event, tabella) {
 
                 let ora = record.ora || "12:00";
                 let cliente = record.cliente || record.nome || "Nessuno";
-                let contanti = parseFloat((record.contanti || "0").replace(',', '.')) || 0;
-                let pos = parseFloat((record.pos || record.carta || "0").replace(',', '.')) || 0;
-                let totaleFallback = parseFloat((record.totale || record.importo || "0").replace(',', '.')) || 0;
 
-                // Se non ci sono contanti o pos specificati, butta tutto nel contante
-                if (contanti === 0 && pos === 0 && totaleFallback > 0) {
-                    contanti = totaleFallback;
-                }
+                let desc = record.descrizione || record.articoli || "VENDITA STORICA EXCEL";
+                let cat = record['categ.'] || record.categoria || record.categ || "STORICO";
+                let qta = parseInt(String(record['q.tà'] || record.quantita || record.qta || "1").replace(/[^0-9,\-]/g, '')) || 1;
+                let importoMerce = parseFloat(String(record.importo || "0").replace(/[^0-9,\-]/g, '').replace(',', '.')) || 0;
 
-                let totaleScontrino = contanti + pos;
-                if (totaleScontrino <= 0) continue; // Salta le righe vuote o a zero
+                let contanti = parseFloat(String(record.contanti || "0").replace(/[^0-9,\-]/g, '').replace(',', '.')) || 0;
+                let pos = parseFloat(String(record.pos || record.carta || "0").replace(/[^0-9,\-]/g, '').replace(',', '.')) || 0;
 
-                // Crea un articolo "fittizio" per riempire lo scontrino storico
-                let articoliStorici = [{
-                    CODICE: "STORICO",
-                    ARTICOLO: "IMPORTAZIONE DA EXCEL",
-                    DESCRIZIONE: record.descrizione || record.articoli || "VENDITA STORICA EXCEL",
+                let sIniz = parseFloat(String(record['s. iniz.'] || "0").replace(/[^0-9,\-]/g, '').replace(',', '.')) || 0;
+                let pCaric = parseFloat(String(record['p. caric.'] || "0").replace(/[^0-9,\-]/g, '').replace(',', '.')) || 0;
+                let pScaric = parseFloat(String(record['p. scaric.'] || "0").replace(/[^0-9,\-]/g, '').replace(',', '.')) || 0;
+                let bonus = parseFloat(String(record.bonus || "0").replace(/[^0-9,\-]/g, '').replace(',', '.')) || 0;
+                let sFin = parseFloat(String(record['s. fin.'] || "0").replace(/[^0-9,\-]/g, '').replace(',', '.')) || 0;
+
+                let articoloCorrente = {
+                    CODICE: "CSV-" + Math.floor(Math.random() * 10000000),
+                    ARTICOLO: desc,
+                    DESCRIZIONE: desc,
                     TIPO: "PZ",
-                    IMPORTO: totaleScontrino,
-                    QUANTITA: 1,
-                    CATEGORIA: "STORICO EXCEL"
-                }];
-
-                let recordVendita = {
-                    CLIENTE: cliente.toUpperCase(),
-                    GIORNO: dataExcel,
-                    ORA: ora,
-                    CONTANTI: contanti,
-                    POS: pos,
-                    PUNTI_CARICATI: parseFloat((record.punticaricati || "0").replace(',', '.')) || 0,
-                    PUNTI_SCARICATI: parseFloat((record.puntiscaricati || "0").replace(',', '.')) || 0,
-                    BONUS: parseFloat((record.bonus || "0").replace(',', '.')) || 0,
-                    SALDO_PUNTI_INIZIALE: 0,
-                    SALDO_PUNTI_FINALE: 0,
-                    ARTICOLI: articoliStorici
+                    IMPORTO: importoMerce,
+                    QUANTITA: qta,
+                    CATEGORIA: cat
                 };
 
+                // Controllo raggruppamento: se è una riga 'c' ed è la stessa data, ora e cliente
+                let appartieneAStessaVendita = venditaCorrente &&
+                    venditaCorrente.CLIENTE === cliente.toUpperCase() &&
+                    venditaCorrente.GIORNO === dataExcel &&
+                    venditaCorrente.ORA === ora &&
+                    isMultipla;
+
+                if (appartieneAStessaVendita) {
+                    // Aggiunge semplicemente l'articolo allo scontrino già aperto (ereditando i totali della prima riga)
+                    venditaCorrente.ARTICOLI.push(articoloCorrente);
+                } else {
+                    // Chiude e salva lo scontrino precedente (se esisteva)
+                    if (venditaCorrente) {
+                        venditeDaSalvare.push(venditaCorrente);
+                    }
+
+                    // Apre un nuovo scontrino
+                    venditaCorrente = {
+                        CLIENTE: cliente.toUpperCase(),
+                        GIORNO: dataExcel,
+                        ORA: ora,
+                        CONTANTI: contanti,
+                        POS: pos,
+                        PUNTI_CARICATI: pCaric,
+                        PUNTI_SCARICATI: pScaric,
+                        BONUS: bonus,
+                        SALDO_PUNTI_INIZIALE: sIniz,
+                        SALDO_PUNTI_FINALE: sFin,
+                        ARTICOLI: [articoloCorrente]
+                    };
+                }
+            }
+        }
+
+        // Salvataggio massivo in un colpo solo per le vendite
+        if (tabella === 'vendite') {
+            if (venditaCorrente) {
+                venditeDaSalvare.push(venditaCorrente);
+            }
+
+            if (venditeDaSalvare.length > 0) {
                 let tx = db.transaction('vendite', 'readwrite');
                 let store = tx.objectStore('vendite');
-                store.add(recordVendita);
-                conteggioAggiunti++;
+                venditeDaSalvare.forEach(v => store.add(v));
+                conteggioAggiunti = venditeDaSalvare.length;
             }
         }
 
         // Chiudiamo le modali e diamo l'esito
         mostraAvvisoModale(`✅ Importazione completata!<br><br>Sono stati elaborati e salvati <b>${conteggioAggiunti}</b> record nell'archivio ${tabella.toUpperCase()}.`);
-        event.target.value = ''; // Resetta il pulsante in modo da poter ricaricare un file
+        event.target.value = ''; // Resetta il pulsante
     };
 
     reader.readAsText(file, 'UTF-8');
@@ -2345,51 +2440,64 @@ window.calcolaStatistiche = async function () {
 };
 
 // ==========================================
-// 📡 TRASMISSIONE LIVE AL CRUSCOTTO REMOTO (VERSIONE REST API)
+// 📡 TRASMISSIONE LIVE AL CRUSCOTTO REMOTO (VERSIONE COMPLETA)
 // ==========================================
 window.inviaVenditaLive = async function (record) {
-    if (!navigator.onLine) {
-        console.warn("Trasmissione ignorata: sei Offline.");
-        return;
-    }
+    if (!navigator.onLine) return;
 
-    // Controllo di sicurezza sui dati
-    if (!record.GIORNO || !record.id) {
-        console.error("Errore: Manca la data o l'ID nello scontrino!", record);
-        return;
-    }
-
-    let nodoGiorno = record.GIORNO;
-    let totaleScontrino = record.CONTANTI + record.POS;
-
-    // Il pacchetto leggero per il cruscotto
     let payload = {
         id: record.id,
         ora: record.ORA,
         operatore: record.OPERATORE || "Sconosciuto",
-        totale: totaleScontrino,
+        totale: record.CONTANTI + record.POS,
         contanti: record.CONTANTI,
-        pos: record.POS
+        pos: record.POS,
+        tipo: "VENDITA" // Aggiunta etichetta per il cruscotto
     };
 
-    // Costruiamo l'indirizzo esatto in cui salvare il dato (aggiungendo .json alla fine)
-    const url = `${FIREBASE_URL}/vendite_live/${nodoGiorno}/${record.id}.json`;
+    const url = `${FIREBASE_URL}/vendite_live/${record.GIORNO}/${record.id}.json`;
+    try { await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); } catch (e) { }
+};
 
-    try {
-        // Usiamo PUT per inserire il dato esattamente in quel percorso con quell'ID
-        let response = await fetch(url, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+window.eliminaVenditaLive = async function (giorno, idVendita) {
+    if (!navigator.onLine) return;
+    const url = `${FIREBASE_URL}/vendite_live/${giorno}/${idVendita}.json`;
+    try { await fetch(url, { method: 'DELETE' }); } catch (e) { }
+};
 
-        if (response.ok) {
-            console.log(`✅ TRASMISSIONE FIREBASE RIUSCITA: Incasso inviato al cloud!`);
-        } else {
-            console.error("❌ ERRORE FIREBASE (Permessi o Rete):", response.status);
+window.inviaMovimentoLive = async function (movimento) {
+    if (!navigator.onLine) return;
+
+    let payload = {
+        id: "MOV_" + movimento.id,
+        ora: movimento.ora,
+        operatore: operatoreAttivo || "Sconosciuto",
+        totale: movimento.importo,
+        tipo: movimento.tipo, // 'ENTRATA' o 'USCITA'
+        descrizione: movimento.descrizione
+    };
+
+    const url = `${FIREBASE_URL}/vendite_live/${movimento.data}/MOV_${movimento.id}.json`;
+    try { await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); } catch (e) { }
+};
+
+// Aggancio la rimozione del movimento dal Cloud nel sistema universale
+let f_eseguiEliminazioneUniversale = window.eseguiEliminazioneUniversale;
+window.eseguiEliminazioneUniversale = async function () {
+    if (tipoEliminazione === 'MOVIMENTO') {
+        let mov = await getRecordById('movimenti_cassa', idDaEliminare);
+        await deleteRecord('movimenti_cassa', idDaEliminare);
+
+        // 🔥 Rimuovi dal cruscotto Cloud
+        if (mov && navigator.onLine) {
+            fetch(`${FIREBASE_URL}/vendite_live/${mov.data}/MOV_${idDaEliminare}.json`, { method: 'DELETE' }).catch(e => console.log(e));
         }
-    } catch (e) {
-        console.error("❌ ERRORE FIREBASE (Connessione fallita):", e);
+
+        await popolaRegistroCassa();
+        chiudiModale('modal-conferma-elimina');
+        mostraMessaggio("MOVIMENTO ELIMINATO CON SUCCESSO");
+    } else {
+        f_eseguiEliminazioneUniversale(); // Chiama la vecchia funzione per Clienti, Prodotti e Scontrini
     }
 };
 
@@ -2421,21 +2529,22 @@ window.eliminaVenditaLive = async function (giorno, idVendita) {
 
 // 1. SPINGE il cliente sul Cloud (quando lo crei o lo modifichi)
 window.salvaClienteCloud = async function (cliente) {
-    if (!navigator.onLine) return; // Se sei offline, IndexedDB ha già salvato il dato, riproveremo dopo
+    if (!navigator.onLine) return;
 
-    // Aggiungiamo il timbro orario esatto (es. 1712400000000)
+    // 🔥 FIX CRITICO: Scudo Anti-Orfani
+    if (!cliente || !cliente.scheda || cliente.scheda.trim() === '') return;
+
     cliente.timestamp_sync = Date.now();
 
-    // Salviamo l'INTERA scheda cliente su Firebase, non solo i punti
     const url = `${FIREBASE_URL}/clienti/${cliente.scheda}.json`;
 
     try {
         await fetch(url, {
-            method: 'PUT', // PUT sovrascrive o crea il nodo esatto con quel numero di scheda
+            method: 'PATCH', // 🔥 FIX CRITICO: Usa PATCH invece di PUT per preservare la cartella 'messaggi'
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(cliente)
         });
-        console.log(`☁️ Sync UP: Cliente ${cliente.nome} inviato al cloud.`);
+        console.log(`☁️ Sync UP: Cliente ${cliente.nome} aggiornato sul cloud.`);
     } catch (e) {
         console.error("Errore salvataggio cloud cliente:", e);
     }
@@ -2561,6 +2670,78 @@ window.scaricaMagazzinoDalCloud = async function () {
         console.error("Errore download cloud magazzino:", e);
     }
 };
+
+// ==========================================
+        // 📱 1. GENERAZIONE vCARD (QR CODE)
+        // ==========================================
+        window.generaQRvCard = function() {
+            let nomeCompleto = document.getElementById('crm-nome').value.trim();
+            let telefono = document.getElementById('crm-telefono').value.trim();
+
+            if (nomeCompleto === '' || telefono === '') {
+                mostraAvvisoModale("Per generare il QR Code devi prima inserire il Nome e il Telefono.");
+                return;
+            }
+
+            let parti = nomeCompleto.split(' ');
+            let nome = parti[0];
+            let cognome = parti.length > 1 ? parti.slice(1).join(' ') : "";
+
+            let vcard = `BEGIN:VCARD\nVERSION:3.0\nN:${cognome};${nome};;;\nFN:${nomeCompleto}\nTEL;TYPE=CELL:${telefono}\nEND:VCARD`;
+            let url = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(vcard)}`;
+
+            document.getElementById('qr-nome-cliente').textContent = nomeCompleto;
+            document.getElementById('qr-tel-cliente').textContent = telefono;
+            
+            let img = document.getElementById('img-qr-vcard');
+            let loader = document.getElementById('qr-loading');
+            
+            img.style.display = 'none';
+            loader.style.display = 'block';
+            img.onload = function() { loader.style.display = 'none'; img.style.display = 'block'; };
+            img.src = url;
+
+            apriModale('modal-qr-vcard');
+        };
+
+        // ==========================================
+        // 📲 2. INVIA CONTATTO AL PROPRIO WHATSAPP
+        // ==========================================
+        window.inviaContattoAlMioWhatsApp = function() {
+            let nomeCompleto = document.getElementById('crm-nome').value.trim();
+            let telefono = document.getElementById('crm-telefono').value.trim();
+
+            if (nomeCompleto === '' || telefono === '') {
+                mostraAvvisoModale("Per inviarti il contatto devi prima inserire il Nome e il Telefono.");
+                return;
+            }
+
+            // 🛑 INSERISCI QUI IL TUO NUMERO DI TELEFONO PERSONALE (lascia il 39 davanti)
+            let ilMioNumero = "393802837220"; 
+
+            let messaggio = `👤 *Nuovo Contatto da Salvare*\nNome: ${nomeCompleto}\nTel: ${telefono}`;
+            let url = `https://wa.me/${ilMioNumero}?text=${encodeURIComponent(messaggio)}`;
+            window.open(url, '_blank');
+        };
+
+        // ==========================================
+        // 💬 3. APERTURA CHAT WHATSAPP DIRETTA CLIENTE
+        // ==========================================
+        window.apriWhatsAppDiretto = function() {
+            let telefono = document.getElementById('crm-telefono').value.trim();
+            
+            if (telefono === '') {
+                mostraAvvisoModale("Inserisci il numero di telefono per aprire WhatsApp.");
+                return;
+            }
+
+            let numeroPulito = telefono.replace(/[^0-9]/g, '');
+            if (!numeroPulito.startsWith('39') && numeroPulito.length <= 10) {
+                numeroPulito = '39' + numeroPulito;
+            }
+
+            window.open(`https://wa.me/${numeroPulito}`, '_blank');
+        };
 
 // ==========================================
 // ⏱️ AUTO-SYNC IN BACKGROUND (Ogni 60 secondi)
