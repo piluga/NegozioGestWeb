@@ -282,8 +282,27 @@ campoScheda.addEventListener('keypress', function (e) { if (e.key === 'Enter') {
 campoScheda.addEventListener('mouseenter', function () { this.focus(); }); campoBarcode.addEventListener('mouseenter', function () { this.focus(); });
 
 function calcolaPuntiSpesa(bonusApplicato = 0) {
-    let puntiGuadagnati = 0; carrello.forEach(item => { let prezzoScontatoRiga = (item.prezzo * item.qta) * (1 - percentualeSconto / 100); let cat = item.categoria.toLowerCase(); if (cat === 'cbd') { puntiGuadagnati += prezzoScontatoRiga * 1; } else if (cat === 'hhc') { puntiGuadagnati += prezzoScontatoRiga * 0.5; } else { puntiGuadagnati += prezzoScontatoRiga * 0.25; } });
-    if (bonusApplicato > 0 && totaleNettoAttuale > 0) { let rapportoNettoSuLordo = (totaleNettoAttuale - bonusApplicato) / totaleNettoAttuale; puntiGuadagnati = puntiGuadagnati * rapportoNettoSuLordo; }
+    let puntiGuadagnati = 0;
+
+    carrello.forEach(item => {
+        let prezzoScontatoRiga = (item.prezzo * item.qta) * (1 - percentualeSconto / 100);
+        let cat = item.categoria.toLowerCase();
+
+        // 🔥 Aggiunta la categoria 'pm' (Prodotto Manuale) a punteggio pieno!
+        if (cat === 'cbd' || cat === 'pm') {
+            puntiGuadagnati += prezzoScontatoRiga * 1;
+        } else if (cat === 'hhc') {
+            puntiGuadagnati += prezzoScontatoRiga * 0.5;
+        } else {
+            puntiGuadagnati += prezzoScontatoRiga * 0.25;
+        }
+    });
+
+    if (bonusApplicato > 0 && totaleNettoAttuale > 0) {
+        let rapportoNettoSuLordo = (totaleNettoAttuale - bonusApplicato) / totaleNettoAttuale;
+        puntiGuadagnati = puntiGuadagnati * rapportoNettoSuLordo;
+    }
+
     return parseFloat(puntiGuadagnati.toFixed(2));
 }
 
