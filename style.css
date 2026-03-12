@@ -19,7 +19,7 @@
         }
 
         .tasto-fisico {
-            height: 16vh; /* AUMENTATO: prima era 13.5vh */
+            height: 16vh;
             background: linear-gradient(to bottom, #002b5e, #001a3a);
             border: 1px solid #4d88ff;
             border-radius: 4px;
@@ -51,7 +51,7 @@
         /* SCHERMO TOTALE */
         .schermo-totale-container {
             grid-column: span 4;
-            height: height: 16vh;
+            height: 16vh;
             background-color: #c7c7ff;
             border: 2px solid #ffffff;
             border-radius: 4px;
@@ -1036,4 +1036,5 @@
         /* Fa aprire i menu a tendina esattamente sotto il nuovo bordo, senza sovrapporsi */
         .lista-dropdown {
             top: 80% !important;
+
         }
