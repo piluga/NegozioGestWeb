@@ -1,4 +1,4 @@
-﻿const CACHE_NAME = 'cassa-pwa-v14';
+﻿const CACHE_NAME = 'cassa-pwa-v15';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -58,6 +58,7 @@ self.addEventListener('fetch', (event) => {
     );
 
 });
+
 
 
 
