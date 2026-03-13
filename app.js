@@ -2128,24 +2128,22 @@ window.gestisciImportazioneCSV = function (event, tabella) {
 
         if (righe.length <= 1) {
             mostraAvvisoModale("Il file CSV sembra vuoto o manca delle intestazioni.");
-            event.target.value = ''; // Resetta l'input
+            event.target.value = ''; 
             return;
         }
 
-        // Trova il separatore (di solito la virgola o il punto e virgola)
         const separatore = righe[0].includes(';') ? ';' : ',';
-        // Pulisce le intestazioni della prima riga per riconoscerle
         const intestazioni = righe[0].split(separatore).map(h => h.trim().replace(/"/g, '').toLowerCase());
 
         let conteggioAggiunti = 0;
         let venditeDaSalvare = [];
+        let movimentiDaSalvare = []; // 🔥 NUOVO: Raccoglitore per i Movimenti di Cassa (Spese/Distributore)
         let venditaCorrente = null;
 
         for (let i = 1; i < righe.length; i++) {
             const valori = righe[i].split(separatore).map(v => v.trim().replace(/"/g, ''));
-            if (valori.length < intestazioni.length - 1) continue; // Salta le righe vuote o sfasate
+            if (valori.length < intestazioni.length - 1) continue; 
 
-            // Crea un oggetto "record" unendo le intestazioni ai valori
             let record = {};
             intestazioni.forEach((chiave, index) => {
                 record[chiave] = valori[index] || "";
@@ -2185,14 +2183,13 @@ window.gestisciImportazioneCSV = function (event, tabella) {
 
                 store.put(nuovoProdotto);
 
-                // 🔥 CLOUD-SYNC
                 if (typeof salvaProdottoCloud === "function") {
                     salvaProdottoCloud(nuovoProdotto);
                 }
 
                 conteggioAggiunti++;
             }
-            // IMPORTAZIONE STORICO VENDITE (Con raggruppamento Scontrini Multipli)
+            // IMPORTAZIONE STORICO VENDITE
             else if (tabella === 'vendite') {
                 let isMultipla = (record.multiple || "").toLowerCase() === 'c';
                 let dataExcel = record.giorno || record.data || getOggiString();
@@ -2209,13 +2206,39 @@ window.gestisciImportazioneCSV = function (event, tabella) {
 
                 let ora = record.ora || "12:00";
                 let cliente = record.cliente || record.nome || "Nessuno";
-
                 let desc = record.descrizione || record.articoli || "VENDITA STORICA EXCEL";
-                let cat = record['categ.'] || record.categoria || record.categ || "STORICO";
-                let qta = parseInt(String(record['q.tà'] || record.quantita || record.qta || "1").replace(/[^0-9,\-]/g, '')) || 1;
+                let cat = (record['categ.'] || record.categoria || record.categ || "STORICO").toUpperCase();
+                
                 let importoMerce = parseFloat(String(record.importo || "0").replace(/[^0-9,\-]/g, '').replace(',', '.')) || 0;
-
                 let contanti = parseFloat(String(record.contanti || "0").replace(/[^0-9,\-]/g, '').replace(',', '.')) || 0;
+
+                // 🌟 FIX: Intercettiamo le Uscite di Cassa
+                if (cat === 'USCITA' || cliente.toUpperCase() === 'USCITA DI CASSA') {
+                    if (venditaCorrente) { venditeDaSalvare.push(venditaCorrente); venditaCorrente = null; }
+                    movimentiDaSalvare.push({
+                        data: dataExcel,
+                        ora: ora,
+                        tipo: "USCITA",
+                        importo: importoMerce > 0 ? importoMerce : contanti,
+                        descrizione: desc
+                    });
+                    continue; // Salta il resto del ciclo, NON lo salva come vendita!
+                }
+
+                // 🌟 FIX: Intercettiamo l'Incasso del Distributore
+                if (cat === 'DISTRIBUTORE' || cliente.toUpperCase() === 'INCASSO DISTRIBUTORE') {
+                    if (venditaCorrente) { venditeDaSalvare.push(venditaCorrente); venditaCorrente = null; }
+                    movimentiDaSalvare.push({
+                        data: dataExcel,
+                        ora: ora,
+                        tipo: "ENTRATA",
+                        importo: importoMerce > 0 ? importoMerce : contanti,
+                        descrizione: desc
+                    });
+                    continue; // Salta il resto del ciclo, NON lo salva come vendita!
+                }
+
+                let qta = parseInt(String(record['q.tà'] || record.quantita || record.qta || "1").replace(/[^0-9,\-]/g, '')) || 1;
                 let pos = parseFloat(String(record.pos || record.carta || "0").replace(/[^0-9,\-]/g, '').replace(',', '.')) || 0;
 
                 let sIniz = parseFloat(String(record['s. iniz.'] || "0").replace(/[^0-9,\-]/g, '').replace(',', '.')) || 0;
@@ -2234,7 +2257,6 @@ window.gestisciImportazioneCSV = function (event, tabella) {
                     CATEGORIA: cat
                 };
 
-                // Controllo raggruppamento: se è una riga 'c' ed è la stessa data, ora e cliente
                 let appartieneAStessaVendita = venditaCorrente &&
                     venditaCorrente.CLIENTE === cliente.toUpperCase() &&
                     venditaCorrente.GIORNO === dataExcel &&
@@ -2242,15 +2264,11 @@ window.gestisciImportazioneCSV = function (event, tabella) {
                     isMultipla;
 
                 if (appartieneAStessaVendita) {
-                    // Aggiunge semplicemente l'articolo allo scontrino già aperto (ereditando i totali della prima riga)
                     venditaCorrente.ARTICOLI.push(articoloCorrente);
                 } else {
-                    // Chiude e salva lo scontrino precedente (se esisteva)
                     if (venditaCorrente) {
                         venditeDaSalvare.push(venditaCorrente);
                     }
-
-                    // Apre un nuovo scontrino
                     venditaCorrente = {
                         CLIENTE: cliente.toUpperCase(),
                         GIORNO: dataExcel,
@@ -2268,23 +2286,31 @@ window.gestisciImportazioneCSV = function (event, tabella) {
             }
         }
 
-        // Salvataggio massivo in un colpo solo per le vendite
+        // Salvataggio massivo
         if (tabella === 'vendite') {
             if (venditaCorrente) {
                 venditeDaSalvare.push(venditaCorrente);
             }
+            
+            conteggioAggiunti = 0; // Azzera per ricalcolare il totale esatto di righe caricate
 
             if (venditeDaSalvare.length > 0) {
                 let tx = db.transaction('vendite', 'readwrite');
                 let store = tx.objectStore('vendite');
                 venditeDaSalvare.forEach(v => store.add(v));
-                conteggioAggiunti = venditeDaSalvare.length;
+                conteggioAggiunti += venditeDaSalvare.length;
+            }
+            
+            if (movimentiDaSalvare.length > 0) {
+                let txMov = db.transaction('movimenti_cassa', 'readwrite');
+                let storeMov = txMov.objectStore('movimenti_cassa');
+                movimentiDaSalvare.forEach(m => storeMov.add(m));
+                conteggioAggiunti += movimentiDaSalvare.length;
             }
         }
 
-        // Chiudiamo le modali e diamo l'esito
         mostraAvvisoModale(`✅ Importazione completata!<br><br>Sono stati elaborati e salvati <b>${conteggioAggiunti}</b> record nell'archivio ${tabella.toUpperCase()}.`);
-        event.target.value = ''; // Resetta il pulsante
+        event.target.value = ''; 
     };
 
     reader.readAsText(file, 'UTF-8');
