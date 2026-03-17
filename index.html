@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -120,6 +120,17 @@
         </div>
     </div>
 
+    <div class="modal-overlay overlay-primo-piano" id="modal-conferma-salvataggio" style="z-index: 2500;">
+        <div class="modal-box" style="width: 450px; border-color: #00ffcc;">
+            <div class="modal-titolo" style="color: #00ffcc;">💾 CONFERMA SALVATAGGIO</div>
+            <p id="msg-conferma-salvataggio" style="font-size: 2.2vh; margin-bottom: 25px; line-height: 1.4;">Vuoi salvare i dati di questo cliente?</p>
+            <div class="modal-bottoniera">
+                <button class="btn-modal btn-grigio" onclick="chiudiModale('modal-conferma-salvataggio')">ANNULLA</button>
+                <button class="btn-modal btn-verde" onclick="eseguiSalvataggioCliente()">SÌ, SALVA</button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay overlay-primo-piano" id="modal-riscatto">
         <div class="modal-box">
             <div class="modal-titolo">🎁 BONUS DISPONIBILE</div>
@@ -152,7 +163,7 @@
 
     <div class="modal-overlay overlay-primo-piano" id="modal-esito">
         <div class="modal-box" style="border-color: #00cc66; box-shadow: 0 0 30px rgba(0, 204, 102, 0.4); width: 550px;">
-            <div class="modal-titolo" style="color: #00cc66;">✅ VENDITA COMPLETATA</div>
+            <div class="modal-titolo" id="titolo-modal-esito" style="color: #00cc66;">✅ VENDITA COMPLETATA</div>
             <p id="msg-esito-punti" style="font-size: 2.2vh; line-height: 1.5; margin-bottom: 20px;"></p>
             <div id="box-notifiche" style="display: none; margin-top: 20px; border-top: 1px solid #4d88ff; padding-top: 15px;">
                 <p style="font-size: 1.8vh; color: #b3d9ff; margin-bottom: 10px;">Invia aggiornamento punti al cliente:</p>
@@ -163,7 +174,7 @@
                 </div>
             </div>
             <div class="modal-bottoniera" style="margin-top: 30px;">
-                <button class="btn-modal btn-grigio" onclick="chiudiModaleEsito()">NUOVO CLIENTE E CHIUDI</button>
+                <button class="btn-modal btn-grigio" id="btn-chiudi-esito" onclick="chiudiModaleEsito()">NUOVO CLIENTE E CHIUDI</button>
             </div>
         </div>
     </div>
@@ -210,7 +221,7 @@
     <div class="modal-overlay" id="modal-gestione-clienti">
         <div class="modal-box modal-grande modal-full">
             <div class="crm-left">
-                <div class="modal-titolo" style="font-size: 2.5vh;">RUBRICA CLIENTI</div>
+                <div class="modal-titolo" style="font-size: 2.5vh;">RUBRICA CLIENTI <span id="crm-totale-clienti" style="font-size: 1.5vh; color: #b3d9ff; margin-left: 10px;">(0)</span></div>
                 <input type="text" id="crm-search" class="crm-search" placeholder="🔍 Cerca per Nome, Telefono o Codice...">
                 <div class="crm-list" id="crm-list"></div>
             </div>
@@ -463,11 +474,11 @@
             </div>
             <div class="crm-form-group">
                 <label class="crm-label">Importo (€)</label>
-                <input type="text" id="spesa-importo" class="crm-input" placeholder="0,00" inputmode="decimal" style="text-align: center; font-size: 4vh; height: 60px;">
+                <input type="text" id="spesa-importo" class="crm-input" placeholder="0,00" inputmode="decimal" style="text-align: center; font-size: 4vh; height: 60px;" onkeypress="if(event.key === 'Enter') { event.preventDefault(); document.getElementById('spesa-descrizione').focus(); }">
             </div>
             <div class="crm-form-group">
                 <label class="crm-label">Causale / Descrizione</label>
-                <input type="text" id="spesa-descrizione" class="crm-input" placeholder="Es. Pagamento fornitore...">
+                <input type="text" id="spesa-descrizione" class="crm-input" placeholder="Es. Pagamento fornitore..." onkeypress="if(event.key === 'Enter') { event.preventDefault(); salvaSpesa(); }">
             </div>
             <div class="modal-bottoniera" style="margin-top: 25px;">
                 <button class="btn-modal btn-grigio" onclick="chiudiModale('modal-spesa')">ANNULLA</button>
@@ -485,7 +496,7 @@
             </div>
             <div class="crm-form-group">
                 <label class="crm-label">Importo (€)</label>
-                <input type="text" id="distributore-importo" class="crm-input" placeholder="0,00" inputmode="decimal" style="text-align: center; font-size: 4vh; height: 60px;">
+                <input type="text" id="distributore-importo" class="crm-input" placeholder="0,00" inputmode="decimal" style="text-align: center; font-size: 4vh; height: 60px;" onkeypress="if(event.key === 'Enter') { event.preventDefault(); salvaDistributore(); }">
             </div>
             <div class="modal-bottoniera" style="margin-top: 25px;">
                 <button class="btn-modal btn-grigio" onclick="chiudiModale('modal-distributore')">ANNULLA</button>
@@ -527,6 +538,18 @@
                     <label class="crm-label">Quantità Punti</label>
                     <input type="text" id="man-punti-valore" class="crm-input" placeholder="0" inputmode="decimal" style="text-align: center;">
                 </div>
+            </div>
+
+            <div class="crm-form-group" style="margin-top: 15px;">
+                <label class="crm-label">Categoria Movimento (Regola Punti)</label>
+                <select id="man-punti-categoria" class="crm-input" style="height: 38px; box-sizing: border-box; padding: 8px; font-size: 1.8vh; cursor: pointer; width: 100%;">
+                    <option value="SISTEMA">Generico (SISTEMA)</option>
+                    <option value="CBD">CBD</option>
+                    <option value="HHC">HHC</option>
+                    <option value="GADGET">GADGET</option>
+                    <option value="PM">PM (Prodotto Manuale)</option>
+                    <option value="ALTRO">ALTRO</option>
+                </select>
             </div>
 
             <div class="modal-bottoniera" style="margin-top: 10px;">
@@ -723,6 +746,11 @@
                 <input type="checkbox" id="impostazioni-pin-toggle" style="transform: scale(1.5);">
             </div>
             <p style="font-size: 1.4vh; color: #8888bb; text-align: center; margin-bottom: 20px;">Nota: Il PIN di default è impostato su 12345 dal sistema.</p>
+
+            <div class="crm-form-group" style="margin-bottom: 15px; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; border: 1px solid #ffcc00;">
+                <label class="crm-label" style="color: #ffcc00; margin-bottom: 5px;">Link Database Firebase (URL)</label>
+                <input type="text" id="impostazioni-firebase-url" class="crm-input" placeholder="Es: https://tuo-progetto.firebaseio.com">
+            </div>
 
             <div class="modal-bottoniera">
                 <button class="btn-modal btn-grigio" onclick="chiudiModale('modal-impostazioni-sistema'); apriModale('modal-impostazioni-menu');" style="flex: 1;">⬅️ INDIETRO</button>
@@ -1078,19 +1106,19 @@
             </div>
         </div>
     </div>
-	
-	<div class="modal-overlay overlay-primo-piano" id="modal-conferma-reset" style="z-index: 2500;">
+
+    <div class="modal-overlay overlay-primo-piano" id="modal-conferma-reset" style="z-index: 2500;">
         <div class="modal-box" style="width: 450px; border-color: #ff4d4d;">
             <div class="modal-titolo" style="color: #ff4d4d;">⚠️ ATTENZIONE: RESET DI FABBRICA</div>
             <p id="msg-conferma-reset" style="font-size: 2vh; margin-bottom: 25px; line-height: 1.4;"></p>
-            
+
             <div class="modal-bottoniera">
                 <button class="btn-modal btn-grigio" onclick="chiudiModale('modal-conferma-reset')">ANNULLA</button>
                 <button class="btn-modal btn-rosso" onclick="eseguiResetDatabase()">SÌ, CANCELLA TUTTO</button>
             </div>
         </div>
     </div>
-	
+
     <div class="modal-overlay overlay-primo-piano" id="modal-avviso" style="z-index: 9999;">
         <div class="modal-box" style="width: 400px; border-color: #ffcc00;">
             <div class="modal-titolo" style="color: #ffcc00;">⚠️ ATTENZIONE</div>
