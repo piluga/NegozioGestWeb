@@ -1,4 +1,4 @@
-﻿const CACHE_NAME = 'cassa-pwa-v17';
+﻿const CACHE_NAME = 'cassa-pwa-v50';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
