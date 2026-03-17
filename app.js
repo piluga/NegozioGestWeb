@@ -1,3 +1,5 @@
+let FIREBASE_URL = localStorage.getItem("gestionale_firebase_url") || "";
+
 // 🗄️ DATABASE INDEXEDDB
 const DB_NAME = 'CassaPWA_DB';
 const DB_VERSION = 3;
@@ -29,13 +31,14 @@ function initDB() {
 
         request.onsuccess = function (event) {
             db = event.target.result;
-
-            resolve(); // <--- MANCAVA QUESTO COMANDO VITALE! Sblocca l'avvio dell'app.
+            resolve();
 
             // Avvia la sincronizzazione silenziosa in background
             setTimeout(() => {
                 scaricaClientiDalCloud();
                 scaricaMagazzinoDalCloud();
+                if (typeof scaricaVenditeDalCloud === "function") scaricaVenditeDalCloud();     // 🚀 Recupero Storico Scontrini
+                if (typeof scaricaMovimentiDalCloud === "function") scaricaMovimentiDalCloud(); // 🚀 Recupero Storico Spese
             }, 4000);
         };
 
@@ -61,12 +64,27 @@ function updateCliente(cliente) {
     });
 }
 function deleteRecord(storeName, key) { return new Promise((resolve) => { let tx = db.transaction(storeName, 'readwrite'); tx.objectStore(storeName).delete(key); tx.oncomplete = () => resolve(); }); }
-function salvaVendita(recordVendita) { return new Promise((resolve) => { let tx = db.transaction('vendite', 'readwrite'); tx.objectStore('vendite').add(recordVendita); tx.oncomplete = () => resolve(); }); }
+
+function salvaVendita(recordVendita) {
+    return new Promise((resolve) => {
+        let tx = db.transaction('vendite', 'readwrite');
+        tx.objectStore('vendite').put(recordVendita); // 🚀 Evita duplicati in caso di ripristino
+        tx.oncomplete = () => {
+            if (typeof salvaVenditaCloud === "function") salvaVenditaCloud(recordVendita); // 🚀 Push al Cloud
+            resolve();
+        };
+    });
+}
+
 function salvaMovimentoCassaDB(movimento) {
     return new Promise((resolve) => {
+        if (!movimento.id) movimento.id = Date.now(); // 🚀 ID indistruttibile anti-reset
         let tx = db.transaction('movimenti_cassa', 'readwrite');
-        let request = tx.objectStore('movimenti_cassa').add(movimento);
-        request.onsuccess = (e) => resolve(e.target.result); // Restituisce l'ID per Firebase
+        tx.objectStore('movimenti_cassa').put(movimento);
+        tx.oncomplete = () => {
+            if (typeof salvaMovimentoCloud === "function") salvaMovimentoCloud(movimento); // 🚀 Push al Cloud
+            resolve(movimento.id);
+        };
     });
 }
 function getRecordById(storeName, id) { return new Promise((resolve) => { let tx = db.transaction(storeName, 'readonly'); let request = tx.objectStore(storeName).get(id); request.onsuccess = () => resolve(request.result); }); }
@@ -142,6 +160,11 @@ async function avviaSistemaBase() {
 
         // All'avvio, mostra il menu principale (Launcher)
         apriModale('modal-menu-principale');
+
+        // 🚀 AVVISO FIREBASE INTELLIGENTE: Compare solo DOPO lo sblocco, sopra il menu!
+        if (!FIREBASE_URL || FIREBASE_URL === "") {
+            setTimeout(() => mostraAvvisoModale("⚠️ <b>Nessun Database Collegato</b><br><br>Vai in <i>Impostazioni -> Impostazioni Sistema</i> e inserisci il link di Firebase per abilitare il salvataggio sul cloud."), 800);
+        }
 
     } catch (e) {
         console.error("Errore inizializzazione DB", e);
@@ -415,6 +438,14 @@ if (btnCassa) {
 window.confermaVendita = async function (riscattaBonus) {
     if (riscattaBonus) { if (clienteAttivo.bonus > totaleNettoAttuale) { chiudiModale('modal-riscatto'); apriModale('modal-saldo-negativo'); return; } }
     chiudiModale('modal-riscatto'); let messaggioEsito = ""; let bonusUsato = (riscattaBonus && clienteAttivo) ? clienteAttivo.bonus : 0; let tipoPagamento = campoPagamento.value || "CONTANTI"; let pagato = totaleNettoAttuale - bonusUsato;
+
+    // --- RESET TESTI MODALE ESITO ---
+    let titoloModale = document.getElementById('titolo-modal-esito');
+    if (titoloModale) titoloModale.innerHTML = "✅ VENDITA COMPLETATA";
+    let btnChiudi = document.getElementById('btn-chiudi-esito');
+    if (btnChiudi) btnChiudi.innerHTML = "NUOVO CLIENTE E CHIUDI";
+    // --------------------------------
+
     let saldoIniziale = clienteAttivo ? clienteAttivo.punti : 0; let puntiAcquisiti = 0; let puntiSpesi = 0; let saldoFinale = saldoIniziale; let dataDiOggiStr = getOggiString();
 
     if (clienteAttivo) {
@@ -599,23 +630,82 @@ window.applicaPuntiManuali = async function (azione) {
     let puntiDaApplicare = azione === 'SOTTRAI' ? puntiDaverificare * -1 : puntiDaverificare;
     if (azione === 'SOTTRAI' && (clienteManualeScelto.punti + puntiDaApplicare) < 0) { mostraAvvisoModale("Il cliente non ha abbastanza punti da scaricare!"); return; }
 
-    clienteManualeScelto.punti += puntiDaApplicare; clienteManualeScelto.bonus = Math.floor(clienteManualeScelto.punti / 100) * 10; clienteManualeScelto.dataUltimaOperazione = inPuntiData.value;
+    let saldoIniz = clienteManualeScelto.punti;
+
+    clienteManualeScelto.punti += puntiDaApplicare;
+    clienteManualeScelto.bonus = Math.floor(clienteManualeScelto.punti / 100) * 10;
+    clienteManualeScelto.dataUltimaOperazione = inPuntiData.value;
     await updateCliente(clienteManualeScelto);
 
     // 🔥 SINCRONIZZAZIONE FIREBASE (Punti Manuali)
     let puntiCaric = azione === 'CARICA' ? puntiDaverificare : 0;
     let puntiScaric = azione === 'SOTTRAI' ? puntiDaverificare : 0;
-    let saldoIniz = clienteManualeScelto.punti - puntiDaApplicare;
 
+    // Aggiorna solo il saldo totale, il messaggio lo invierà il pulsante "Notifica App"
     aggiornaFidelityFirebase(clienteManualeScelto.scheda, clienteManualeScelto.punti, inPuntiData.value);
-    firebasePushNotifiche(clienteManualeScelto.scheda, saldoIniz, puntiCaric, puntiScaric, clienteManualeScelto.punti, clienteManualeScelto.bonus);
 
     let d = new Date();
-    let recordPunti = { CLIENTE: clienteManualeScelto.nome, GIORNO: inPuntiData.value, ORA: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`, CONTANTI: 0, POS: 0, PUNTI_CARICATI: azione === 'CARICA' ? puntiDaverificare : 0, PUNTI_SCARICATI: azione === 'SOTTRAI' ? puntiDaverificare : 0, BONUS: 0, SALDO_PUNTI_INIZIALE: clienteManualeScelto.punti - puntiDaApplicare, SALDO_PUNTI_FINALE: clienteManualeScelto.punti, ARTICOLI: [{ CODICE: "PUNTI", ARTICOLO: "MOVIMENTO MANUALE PUNTI", DESCRIZIONE: azione, TIPO: "PTS", IMPORTO: 0, QUANTITA: 1, CATEGORIA: "SISTEMA" }] };
+    let catSelezionata = document.getElementById('man-punti-categoria') ? document.getElementById('man-punti-categoria').value : "SISTEMA";
+    let recordPunti = { CLIENTE: clienteManualeScelto.nome, GIORNO: inPuntiData.value, ORA: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`, CONTANTI: 0, POS: 0, PUNTI_CARICATI: puntiCaric, PUNTI_SCARICATI: puntiScaric, BONUS: 0, SALDO_PUNTI_INIZIALE: saldoIniz, SALDO_PUNTI_FINALE: clienteManualeScelto.punti, ARTICOLI: [{ CODICE: "PUNTI", ARTICOLO: "MOVIMENTO MANUALE PUNTI", DESCRIZIONE: azione, TIPO: "PTS", IMPORTO: 0, QUANTITA: 1, CATEGORIA: catSelezionata }] };
     await salvaVendita(recordPunti);
-    chiudiModale('modal-punti-manuali'); mostraMessaggio(`✅ ${azione} PUNTI COMPLETATA PER ${clienteManualeScelto.nome}`);
-};
 
+    chiudiModale('modal-punti-manuali');
+
+    // --- PREPARAZIONE MODALE ESITO E NOTIFICHE ---
+    window.datiNotificaApp = {
+        scheda: clienteManualeScelto.scheda,
+        saldoIniziale: saldoIniz,
+        puntiAcquisiti: puntiCaric,
+        puntiSpesi: puntiScaric,
+        saldoFinale: clienteManualeScelto.punti,
+        bonus: clienteManualeScelto.bonus
+    };
+
+    telClienteAttuale = clienteManualeScelto.telefono;
+
+    let templateMsg = localStorage.getItem('impostazioni_msg_template') || MSG_BASE_DEFAULT;
+
+    let strSaldoIniziale = saldoIniz.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    let strPuntiCaricati = puntiCaric.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    let strPuntiScaricati = puntiScaric.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    let strPuntiFinale = clienteManualeScelto.punti.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    let strBonus = clienteManualeScelto.bonus.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    let dataOggiTs = new Date();
+    let strData = `${String(dataOggiTs.getDate()).padStart(2, '0')}/${String(dataOggiTs.getMonth() + 1).padStart(2, '0')}/${dataOggiTs.getFullYear()}`;
+    let strOra = `${String(dataOggiTs.getHours()).padStart(2, '0')}:${String(dataOggiTs.getMinutes()).padStart(2, '0')}:${String(dataOggiTs.getSeconds()).padStart(2, '0')}`;
+
+    msgDaInviarePlain = templateMsg
+        .replace(/{NOME}/g, clienteManualeScelto.nome)
+        .replace(/{SCHEDA}/g, clienteManualeScelto.scheda)
+        .replace(/{SALDO_INIZIALE}/g, strSaldoIniziale)
+        .replace(/{PUNTI_CARICATI}/g, strPuntiCaricati)
+        .replace(/{PUNTI_SCARICATI}/g, strPuntiScaricati)
+        .replace(/{PUNTI}/g, strPuntiFinale)
+        .replace(/{BONUS}/g, strBonus)
+        .replace(/{DATA}/g, strData)
+        .replace(/{ORA}/g, strOra);
+
+    let messaggioEsito = `Movimento manuale registrato con successo.<br><br>`;
+    if (puntiCaric > 0) messaggioEsito += `Punti caricati: <b style="color:#00cc66;">⭐ +${strPuntiCaricati}</b><br>`;
+    if (puntiScaric > 0) messaggioEsito += `Punti scaricati: <b style="color:#ff4d4d;">⭐ -${strPuntiScaricati}</b><br>`;
+    messaggioEsito += `<br>Nuovo saldo punti: <b>⭐ ${strPuntiFinale}</b><br>Bonus disponibile per la prossima spesa: <b>🎁 € ${strBonus}</b>`;
+
+    document.getElementById('msg-esito-punti').innerHTML = messaggioEsito;
+
+    let titoloModale = document.getElementById('titolo-modal-esito');
+    if (titoloModale) titoloModale.innerHTML = azione === 'CARICA' ? "✅ CARICO PUNTI EFFETTUATO" : "✅ SCARICO PUNTI EFFETTUATO";
+
+    let btnChiudi = document.getElementById('btn-chiudi-esito');
+    if (btnChiudi) btnChiudi.innerHTML = "CHIUDI";
+
+    document.getElementById('box-notifiche').style.display = 'block';
+    let btnApp = document.getElementById('btn-invia-app');
+    btnApp.innerHTML = '📱 Notifica App';
+    btnApp.classList.remove('inviato');
+
+    apriModale('modal-esito');
+};
 
 // 🌟 GESTIONE CLIENTI CRM E CONTROLLI
 const inputCrmScheda = document.getElementById('crm-codice'); const inputCrmNome = document.getElementById('crm-nome'); const inputCrmTel = document.getElementById('crm-telefono'); const inputCrmPunti = document.getElementById('crm-punti'); const lblCrmBonus = document.getElementById('crm-calc-bonus'); const lblCrmData = document.getElementById('crm-calc-data'); const btnCrmElimina = document.getElementById('crm-btn-elimina'); const btnGeneraScheda = document.getElementById('btn-genera-scheda'); const listaCrmHTML = document.getElementById('crm-list'); const searchCrm = document.getElementById('crm-search');
@@ -623,7 +713,14 @@ let listaClientiCompleta = [];
 
 if (btnClienti) { btnClienti.addEventListener('click', async function () { apriModale('modal-gestione-clienti'); await crmCaricaLista(); crmNuovoCliente(); searchCrm.value = ''; searchCrm.focus(); }); }
 
-async function crmCaricaLista() { listaClientiCompleta = await getAll('clienti'); listaClientiCompleta.sort((a, b) => a.nome.localeCompare(b.nome)); crmDisegnaLista(listaClientiCompleta); }
+async function crmCaricaLista() { 
+    listaClientiCompleta = await getAll('clienti'); 
+    listaClientiCompleta.sort((a, b) => a.nome.localeCompare(b.nome)); 
+    crmDisegnaLista(listaClientiCompleta); 
+    
+    let contatore = document.getElementById('crm-totale-clienti');
+    if (contatore) contatore.textContent = `(${listaClientiCompleta.length})`;
+}
 
 function crmDisegnaLista(arrayClienti) {
     listaCrmHTML.innerHTML = '';
@@ -640,27 +737,76 @@ if (searchCrm) {
 }
 
 function crmCaricaScheda(c) { document.getElementById('crm-titolo-scheda').textContent = "MODIFICA CLIENTE"; inputCrmScheda.value = c.scheda; inputCrmScheda.disabled = true; btnGeneraScheda.style.display = 'none'; inputCrmNome.value = c.nome; inputCrmTel.value = c.telefono; inputCrmPunti.value = c.punti.toLocaleString('it-IT', { maximumFractionDigits: 2 }); lblCrmBonus.textContent = "€ " + c.bonus; if (c.dataUltimaOperazione) { let partiData = c.dataUltimaOperazione.split('-'); if (partiData.length === 3) { lblCrmData.textContent = `${partiData[2]}/${partiData[1]}/${partiData[0]}`; } else { lblCrmData.textContent = c.dataUltimaOperazione; } } else { lblCrmData.textContent = "-"; } btnCrmElimina.style.display = 'block'; }
-window.crmNuovoCliente = function () { document.getElementById('crm-titolo-scheda').textContent = "NUOVO CLIENTE"; inputCrmScheda.value = ''; inputCrmScheda.disabled = false; btnGeneraScheda.style.display = 'block'; inputCrmNome.value = ''; inputCrmTel.value = ''; inputCrmPunti.value = '0'; lblCrmBonus.textContent = "€ 0"; lblCrmData.textContent = "-"; btnCrmElimina.style.display = 'none'; document.querySelectorAll('.crm-list-item').forEach(el => el.classList.remove('attivo')); inputCrmScheda.focus(); };
+window.crmNuovoCliente = function () {
+    document.getElementById('crm-titolo-scheda').textContent = "NUOVO CLIENTE";
+    inputCrmScheda.value = '';
+    inputCrmScheda.disabled = false;
+    btnGeneraScheda.style.display = 'block';
+    inputCrmNome.value = '';
+    inputCrmTel.value = '';
+    inputCrmPunti.value = '0';
+    lblCrmBonus.textContent = "€ 0";
+    lblCrmData.textContent = "-";
+    btnCrmElimina.style.display = 'none';
+    document.querySelectorAll('.crm-list-item').forEach(el => el.classList.remove('attivo'));
+
+    // --- NOVITÀ: Pulizia campo di ricerca e ripristino lista ---
+    if (searchCrm) {
+        searchCrm.value = '';
+        crmDisegnaLista(listaClientiCompleta);
+    }
+    // -----------------------------------------------------------
+
+    inputCrmScheda.focus();
+};
 window.generaCodiceSchedaUnivoco = async function () { let unico = false; let nuovoCodice = ""; btnGeneraScheda.innerHTML = "⏳..."; while (!unico) { let cifreRandom = Math.floor(Math.random() * 10000000000).toString().padStart(10, '0'); nuovoCodice = "200" + cifreRandom; let esiste = await getBySchedaOTelefono(nuovoCodice); if (!esiste) { unico = true; } } inputCrmScheda.value = nuovoCodice; btnGeneraScheda.innerHTML = "🎲 GENERA"; inputCrmTel.focus(); };
 if (inputCrmPunti) {
     inputCrmPunti.addEventListener('input', function () { this.value = this.value.replace(/[^0-9.,]/g, ''); let p = parseFloat(this.value.replace(',', '.')); if (!isNaN(p)) { lblCrmBonus.textContent = "€ " + (Math.floor(p / 100) * 10); } });
 }
 
+// 1. Fase di Controllo e Apertura Modale
 window.crmSalvaCliente = async function () {
     let scheda = inputCrmScheda.value.trim(); let nome = inputCrmNome.value.trim().toUpperCase(); let telefono = inputCrmTel.value.trim(); let punti = parseFloat(inputCrmPunti.value.replace(',', '.')) || 0;
+
+    // Controlli di validità di base
     if (scheda === '' || nome === '' || telefono === '') { mostraAvvisoModale("Compila i campi obbligatori:<br>- Codice Scheda<br>- Nome Completo<br>- Numero di Telefono"); return; }
+
     let tuttiClienti = await getAll('clienti');
     if (!inputCrmScheda.disabled) { let checkScheda = tuttiClienti.find(c => c.scheda === scheda); if (checkScheda) { mostraAvvisoModale(`Esiste già un cliente registrato con questo Codice Scheda:<br><br><b>${checkScheda.nome}</b>`); return; } }
+
     let checkTelefono = tuttiClienti.find(c => c.telefono === telefono && c.scheda !== scheda);
     if (checkTelefono) { mostraAvvisoModale(`Il numero di telefono <b>${telefono}</b><br>è già associato al cliente:<br><br><b>${checkTelefono.nome}</b>`); return; }
+
+    // Se tutto è corretto, non salviamo subito ma apriamo la conferma!
+    document.getElementById('msg-conferma-salvataggio').innerHTML = `Vuoi salvare i dati per il cliente:<br><br><b style="color: #00ffcc; font-size: 2.5vh;">${nome}</b> ?`;
+    apriModale('modal-conferma-salvataggio');
+};
+
+// 2. Fase di Salvataggio Effettivo (chiamata dal tasto "SÌ, SALVA" del modale)
+window.eseguiSalvataggioCliente = async function () {
+    // Chiudi il modale
+    chiudiModale('modal-conferma-salvataggio');
+
+    // Recupera i dati dai campi
+    let scheda = inputCrmScheda.value.trim(); let nome = inputCrmNome.value.trim().toUpperCase(); let telefono = inputCrmTel.value.trim(); let punti = parseFloat(inputCrmPunti.value.replace(',', '.')) || 0;
 
     let bonusCalcolato = Math.floor(punti / 100) * 10; let dataOp;
     if (lblCrmData.textContent === "-") { dataOp = getOggiString(); } else { let parti = lblCrmData.textContent.split('/'); if (parti.length === 3) { dataOp = `${parti[2]}-${parti[1]}-${parti[0]}`; } else { dataOp = getOggiString(); } }
 
     let nuovoCliente = { scheda: scheda, nome: nome, telefono: telefono, punti: punti, bonus: bonusCalcolato, dataUltimaOperazione: dataOp };
-    await updateCliente(nuovoCliente); document.getElementById('crm-titolo-scheda').textContent = "✅ SALVATO!"; document.getElementById('crm-titolo-scheda').style.color = "#00ff00";
+
+    // Salva nel database
+    await updateCliente(nuovoCliente);
+
+    // Aggiornamento Visivo e feedback di successo
+    document.getElementById('crm-titolo-scheda').textContent = "✅ SALVATO!";
+    document.getElementById('crm-titolo-scheda').style.color = "#00ff00";
     setTimeout(() => { document.getElementById('crm-titolo-scheda').textContent = "MODIFICA CLIENTE"; document.getElementById('crm-titolo-scheda').style.color = "white"; }, 1500);
-    await crmCaricaLista(); inputCrmScheda.disabled = true; btnGeneraScheda.style.display = 'none'; btnCrmElimina.style.display = 'block';
+
+    await crmCaricaLista();
+    inputCrmScheda.disabled = true;
+    btnGeneraScheda.style.display = 'none';
+    btnCrmElimina.style.display = 'block';
 };
 
 window.confermaEliminazioneCliente = function () { let scheda = inputCrmScheda.value.trim(); if (scheda === '') return; apriModale('modal-conferma-elimina'); };
@@ -774,8 +920,9 @@ window.eseguiEliminazioneUniversale = async function () {
             // 3. Eliminazione scontrino e aggiornamento visivo
             await deleteRecord('vendite', idDaEliminare);
 
-            // 🔥 RIMUOVE L'INCASSO DAL CRUSCOTTO DIREZIONALE
+            // 🔥 RIMUOVE L'INCASSO DAL CRUSCOTTO DIREZIONALE E DAL BACKUP PERMANENTE
             eliminaVenditaLive(scontrino.GIORNO, idDaEliminare);
+            if (navigator.onLine) fetch(`${FIREBASE_URL}/storico_vendite/${idDaEliminare}.json`, { method: 'DELETE' }).catch(e => console.log(e));
 
             await popolaRegistroCassa(); // Ricarica il registro di cassa pulito
             mostraMessaggio("SCONTRINO ANNULLATO CON SUCCESSO");
@@ -792,50 +939,87 @@ if (btnRegistro) { btnRegistro.addEventListener('click', async function () { awa
 
 async function popolaRegistroCassa() {
     let dataDiOggiStr = getOggiString();
-    let venditeOggi = await getByDate('vendite', 'giorno', dataDiOggiStr); let movimentiOggi = await getByDate('movimenti_cassa', 'data', dataDiOggiStr);
-    let totPOS = 0; let totContantiVendite = 0; let totEntrateExtra = 0; let totUscite = 0; let numeroScontrini = venditeOggi.length; let listaHtml = "";
+    let venditeOggi = await getByDate('vendite', 'giorno', dataDiOggiStr); 
+    let movimentiOggi = await getByDate('movimenti_cassa', 'data', dataDiOggiStr);
+    
+    let totPOS = 0; let totContantiVendite = 0; let totEntrateExtra = 0; let totUscite = 0; 
+    let numeroScontrini = venditeOggi.length; let listaHtml = "";
+
+    // 1. Uniamo tutte le operazioni in un unico Array
+    let operazioniMiste = [];
 
     venditeOggi.forEach(v => {
         totPOS += v.POS;
         totContantiVendite += v.CONTANTI;
-        let totScontrino = v.POS + v.CONTANTI;
-
-        listaHtml += `
-                    <div class="reg-item vendita" style="align-items: center;">
-                        <div class="reg-item-ora">${v.ORA}</div>
-                        <div class="reg-item-desc">Scontrino ${v.CLIENTE !== "Nessuno" ? " - " + v.CLIENTE : ""}</div>
-                        <div class="reg-item-val" style="color:#4d88ff; margin-right: 15px;">+ € ${totScontrino.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
-                        <div style="display: flex; gap: 8px;">
-                            <button onclick="visualizzaScontrinoDaRegistro(${v.id})" style="background: rgba(77,136,255,0.2); border: 1px solid #4d88ff; color: #b3d9ff; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 1.6vh;" title="Vedi Dettaglio">👁️</button>
-                            <button onclick="confermaAnnullamentoScontrino(${v.id})" style="background: rgba(255,77,77,0.2); border: 1px solid #ff4d4d; color: #ff4d4d; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 1.6vh;" title="Annulla Scontrino">❌</button>
-                        </div>
-                    </div>`;
+        operazioniMiste.push({ ...v, isVendita: true, sortTime: v.ORA });
     });
+
     movimentiOggi.forEach(m => {
-        if (m.tipo === 'ENTRATA') {
-            totEntrateExtra += m.importo;
+        if (m.tipo === 'ENTRATA') totEntrateExtra += m.importo;
+        if (m.tipo === 'USCITA') totUscite += m.importo;
+        operazioniMiste.push({ ...m, isVendita: false, sortTime: m.ora });
+    });
+
+    // 2. Mettiamo tutto in ordine cronologico (dal più vecchio al più recente)
+    operazioniMiste.sort((a, b) => a.sortTime.localeCompare(b.sortTime));
+
+    // 3. Disegniamo la lista riga per riga già ordinata
+    operazioniMiste.forEach(item => {
+        if (item.isVendita) {
+            let v = item;
+            let totScontrino = v.POS + v.CONTANTI;
+
+            // --- NUOVA LOGICA: Controlla se è un Carico/Scarico Punti Manuale ---
+            let intestazioneScontrino = "Scontrino";
+            if (v.ARTICOLI && v.ARTICOLI.length > 0 && v.ARTICOLI[0].CODICE === "PUNTI") {
+                intestazioneScontrino = "Scontrino ricarica punti";
+            }
+            // -------------------------------------------------------------------
+
             listaHtml += `
-                        <div class="reg-item entrata" style="align-items: center;">
-                            <div class="reg-item-ora">${m.ora}</div>
-                            <div class="reg-item-desc">${m.descrizione}</div>
-                            <div class="reg-item-val verde" style="margin-right: 15px;">+ € ${m.importo.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
-                            <button onclick="confermaAnnullamentoMovimento(${m.id}, 'ENTRATA')" style="background: rgba(255,77,77,0.2); border: 1px solid #ff4d4d; color: #ff4d4d; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 1.6vh;" title="Elimina Entrata">❌</button>
-                        </div>`;
-        } else if (m.tipo === 'USCITA') {
-            totUscite += m.importo;
-            listaHtml += `
-                        <div class="reg-item uscita" style="align-items: center;">
-                            <div class="reg-item-ora">${m.ora}</div>
-                            <div class="reg-item-desc">${m.descrizione}</div>
-                            <div class="reg-item-val rosso" style="margin-right: 15px;">- € ${m.importo.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
-                            <button onclick="confermaAnnullamentoMovimento(${m.id}, 'USCITA')" style="background: rgba(255,77,77,0.2); border: 1px solid #ff4d4d; color: #ff4d4d; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 1.6vh;" title="Elimina Spesa">❌</button>
-                        </div>`;
+                <div class="reg-item vendita" style="align-items: center;">
+                    <div class="reg-item-ora">${v.ORA}</div>
+                    <div class="reg-item-desc">${intestazioneScontrino} ${v.CLIENTE !== "Nessuno" ? " - " + v.CLIENTE : ""}</div>
+                    <div class="reg-item-val" style="color:#4d88ff; margin-right: 15px;">+ € ${totScontrino.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="visualizzaScontrinoDaRegistro(${v.id})" style="background: rgba(77,136,255,0.2); border: 1px solid #4d88ff; color: #b3d9ff; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 1.6vh;" title="Vedi Dettaglio">👁️</button>
+                        <button onclick="confermaAnnullamentoScontrino(${v.id})" style="background: rgba(255,77,77,0.2); border: 1px solid #ff4d4d; color: #ff4d4d; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 1.6vh;" title="Annulla Scontrino">❌</button>
+                    </div>
+                </div>`;
+        } else {
+            let m = item;
+            if (m.tipo === 'ENTRATA') {
+                listaHtml += `
+                    <div class="reg-item entrata" style="align-items: center;">
+                        <div class="reg-item-ora">${m.ora}</div>
+                        <div class="reg-item-desc">${m.descrizione}</div>
+                        <div class="reg-item-val verde" style="margin-right: 15px;">+ € ${m.importo.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                        <button onclick="confermaAnnullamentoMovimento(${m.id}, 'ENTRATA')" style="background: rgba(255,77,77,0.2); border: 1px solid #ff4d4d; color: #ff4d4d; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 1.6vh;" title="Elimina Entrata">❌</button>
+                    </div>`;
+            } else if (m.tipo === 'USCITA') {
+                listaHtml += `
+                    <div class="reg-item uscita" style="align-items: center;">
+                        <div class="reg-item-ora">${m.ora}</div>
+                        <div class="reg-item-desc">${m.descrizione}</div>
+                        <div class="reg-item-val rosso" style="margin-right: 15px;">- € ${m.importo.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                        <button onclick="confermaAnnullamentoMovimento(${m.id}, 'USCITA')" style="background: rgba(255,77,77,0.2); border: 1px solid #ff4d4d; color: #ff4d4d; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 1.6vh;" title="Elimina Spesa">❌</button>
+                    </div>`;
+            }
         }
     });
 
     let saldoCassetto = totContantiVendite + totEntrateExtra - totUscite;
-    document.getElementById('reg-num-scontrini').textContent = numeroScontrini; document.getElementById('reg-tot-pos').textContent = "€ " + totPOS.toLocaleString('it-IT', { minimumFractionDigits: 2 }); document.getElementById('reg-tot-contanti').textContent = "€ " + totContantiVendite.toLocaleString('it-IT', { minimumFractionDigits: 2 }); document.getElementById('reg-tot-entrate').textContent = "€ " + totEntrateExtra.toLocaleString('it-IT', { minimumFractionDigits: 2 }); document.getElementById('reg-tot-uscite').textContent = "€ " + totUscite.toLocaleString('it-IT', { minimumFractionDigits: 2 }); document.getElementById('reg-saldo-cassetto').textContent = "€ " + saldoCassetto.toLocaleString('it-IT', { minimumFractionDigits: 2 });
-    if (listaHtml === "") listaHtml = "<div style='text-align:center; padding:20px; color:#8888bb;'>Nessun movimento registrato oggi.</div>"; document.getElementById('reg-lista-movimenti').innerHTML = listaHtml;
+    
+    // Aggiornamento interfaccia
+    document.getElementById('reg-num-scontrini').textContent = numeroScontrini; 
+    document.getElementById('reg-tot-pos').textContent = "€ " + totPOS.toLocaleString('it-IT', { minimumFractionDigits: 2 }); 
+    document.getElementById('reg-tot-contanti').textContent = "€ " + totContantiVendite.toLocaleString('it-IT', { minimumFractionDigits: 2 }); 
+    document.getElementById('reg-tot-entrate').textContent = "€ " + totEntrateExtra.toLocaleString('it-IT', { minimumFractionDigits: 2 }); 
+    document.getElementById('reg-tot-uscite').textContent = "€ " + totUscite.toLocaleString('it-IT', { minimumFractionDigits: 2 }); 
+    document.getElementById('reg-saldo-cassetto').textContent = "€ " + saldoCassetto.toLocaleString('it-IT', { minimumFractionDigits: 2 });
+    
+    if (listaHtml === "") listaHtml = "<div style='text-align:center; padding:20px; color:#8888bb;'>Nessun movimento registrato oggi.</div>"; 
+    document.getElementById('reg-lista-movimenti').innerHTML = listaHtml;
 }
 
 if (btnDipendente) {
@@ -1588,7 +1772,7 @@ let dataCorrenteSistema = getOggiString();
 
 // 0. Gestione Spia Wi-Fi (Online/Offline) e Stato Menu
 window.aggiornaStatoRete = function () {
-    // Aggiorna la spia in alto a sinistra nella Cassa
+    // Aggiorna la spia in alto a sinistra nella Cassa (indica solo lo stato di internet)
     if (sysWifi) {
         if (navigator.onLine) {
             sysWifi.innerHTML = '🟢 ONLINE';
@@ -1599,13 +1783,15 @@ window.aggiornaStatoRete = function () {
         }
     }
 
-    // Aggiorna la scritta in fondo al Menu Principale
+    // Aggiorna la scritta in fondo al Menu Principale (indica il vero stato del DB)
     let menuStatus = document.getElementById('menu-status-web');
     if (menuStatus) {
-        if (navigator.onLine) {
+        if (!FIREBASE_URL || FIREBASE_URL === "") {
+            menuStatus.innerHTML = '<span style="color: #ffcc00; font-weight: bold;">Manca Link DB ⚠️</span>';
+        } else if (navigator.onLine) {
             menuStatus.innerHTML = '<span style="color: #00cc66; font-weight: bold;">Collegato 🟢</span>';
         } else {
-            menuStatus.innerHTML = '<span style="color: #ff4d4d; font-weight: bold;">Scollegato 🔴</span>';
+            menuStatus.innerHTML = '<span style="color: #ff4d4d; font-weight: bold;">Offline 🔴</span>';
         }
     }
 };
@@ -1926,8 +2112,6 @@ window.magSalvaProdotto = async function () {
 // ==========================================
 // 🔥 CONNESSIONE FIREBASE REALTIME DATABASE
 // ==========================================
-const FIREBASE_URL = "https://fidelity-gestionale-default-rtdb.europe-west1.firebasedatabase.app";
-
 // 1. Aggiorna il nodo principale del cliente (Solo Punti e Data)
 async function aggiornaFidelityFirebase(numeroScheda, nuoviPunti, dataOperazione) {
     if (!navigator.onLine) return;
@@ -2333,6 +2517,9 @@ window.caricaImpostazioniAvanzate = function () {
     document.getElementById('imp-stampa-indirizzo').value = localStorage.getItem('imp_stampa_indirizzo') || "";
     document.getElementById('imp-stampa-piva').value = localStorage.getItem('imp_stampa_piva') || "";
     document.getElementById('imp-stampa-footer').value = localStorage.getItem('imp_stampa_footer') || "Grazie e Arrivederci!";
+    // Carica URL Firebase
+    let urlFirebase = document.getElementById('impostazioni-firebase-url');
+    if (urlFirebase) urlFirebase.value = FIREBASE_URL;
 };
 
 window.salvaImpostazioniAvanzate = function () {
@@ -2350,8 +2537,17 @@ window.salvaImpostazioniAvanzate = function () {
     localStorage.setItem('imp_stampa_piva', document.getElementById('imp-stampa-piva').value.trim());
     localStorage.setItem('imp_stampa_footer', document.getElementById('imp-stampa-footer').value.trim());
 
-    // Usa rigorosamente la modale, mai l'alert
-    mostraAvvisoModale("Impostazioni salvate con successo!");
+    // Salva Firebase URL
+    let inputFirebase = document.getElementById('impostazioni-firebase-url');
+    if (inputFirebase) {
+        let nuovoUrl = inputFirebase.value.trim();
+        if (nuovoUrl.endsWith("/")) nuovoUrl = nuovoUrl.slice(0, -1);
+        localStorage.setItem('gestionale_firebase_url', nuovoUrl);
+        FIREBASE_URL = nuovoUrl;
+    }
+
+    // Usa rigorosamente la modale
+    mostraAvvisoModale("Impostazioni salvate con successo!<br>Se hai modificato il database, ricarica la pagina.");
 };
 
 // ==========================================
@@ -2667,9 +2863,10 @@ window.eseguiEliminazioneUniversale = async function () {
         let mov = await getRecordById('movimenti_cassa', idDaEliminare);
         await deleteRecord('movimenti_cassa', idDaEliminare);
 
-        // 🔥 Rimuovi dal cruscotto Cloud
+        // 🔥 Rimuovi dal cruscotto Cloud e dal Backup
         if (mov && navigator.onLine) {
             fetch(`${FIREBASE_URL}/vendite_live/${mov.data}/MOV_${idDaEliminare}.json`, { method: 'DELETE' }).catch(e => console.log(e));
+            fetch(`${FIREBASE_URL}/storico_movimenti/${idDaEliminare}.json`, { method: 'DELETE' }).catch(e => console.log(e));
         }
 
         await popolaRegistroCassa();
@@ -3061,12 +3258,21 @@ window.ridisegnaTimelineChat = async function () {
                 div.style.borderBottomLeftRadius = '2px';
             }
 
+            // --- NOVITÀ: GESTIONE IMMAGINI IN ENTRATA ---
+            let testoVisualizzato = m.testo;
+
+            // Se Firebase ci dice che c'è un link immagine, creiamo il tag <img>
+            if (m.immagineUrl) {
+                testoVisualizzato = `<img src="${m.immagineUrl}" style="max-width: 100%; max-height: 250px; border-radius: 8px; margin-bottom: 5px; cursor: pointer; border: 1px solid #444;" onclick="window.open('${m.immagineUrl}', '_blank')" title="Clicca per ingrandire"><br>${m.testo !== "📷 Immagine" ? m.testo : ""}`;
+            }
+
             div.innerHTML = `
                         <div style="font-weight:bold; font-size:1.2vh; color: ${isNegozio ? '#99ccff' : '#00ffcc'}; margin-bottom: 3px;">
                             ${isNegozio ? 'Tu' : 'Cliente'} <span style="font-weight:normal; color:#aaa;">- ${m.data} ${m.ora}</span>
                         </div>
-                        <div>${m.testo}</div>
+                        <div>${testoVisualizzato}</div>
                     `;
+            // --------------------------------------------
             timeline.appendChild(div);
         });
 
@@ -3171,6 +3377,47 @@ window.inviaMessaggioChatApp = async function () {
 };
 
 // ==========================================
+// ☁️ CLOUD-SYNC: STORICO VENDITE E MOVIMENTI (BACKUP TOTALE)
+// ==========================================
+window.salvaVenditaCloud = async function (vendita) {
+    if (!navigator.onLine || !FIREBASE_URL) return;
+    const url = `${FIREBASE_URL}/storico_vendite/${vendita.id}.json`;
+    try { await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(vendita) }); } catch (e) { }
+};
+
+window.salvaMovimentoCloud = async function (movimento) {
+    if (!navigator.onLine || !FIREBASE_URL) return;
+    const url = `${FIREBASE_URL}/storico_movimenti/${movimento.id}.json`;
+    try { await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(movimento) }); } catch (e) { }
+};
+
+window.scaricaVenditeDalCloud = async function () {
+    if (!navigator.onLine || !FIREBASE_URL) return;
+    try {
+        let res = await fetch(`${FIREBASE_URL}/storico_vendite.json`);
+        let dati = await res.json();
+        if (dati) {
+            let tx = db.transaction('vendite', 'readwrite');
+            let store = tx.objectStore('vendite');
+            Object.values(dati).forEach(v => store.put(v));
+        }
+    } catch (e) { }
+};
+
+window.scaricaMovimentiDalCloud = async function () {
+    if (!navigator.onLine || !FIREBASE_URL) return;
+    try {
+        let res = await fetch(`${FIREBASE_URL}/storico_movimenti.json`);
+        let dati = await res.json();
+        if (dati) {
+            let tx = db.transaction('movimenti_cassa', 'readwrite');
+            let store = tx.objectStore('movimenti_cassa');
+            Object.values(dati).forEach(m => store.put(m));
+        }
+    } catch (e) { }
+};
+
+// ==========================================
 // ⏱️ AUTO-SYNC IN BACKGROUND (Ogni 60 secondi)
 // ==========================================
 setInterval(() => {
@@ -3178,6 +3425,8 @@ setInterval(() => {
     if (navigator.onLine) {
         scaricaClientiDalCloud();
         scaricaMagazzinoDalCloud();
+        if (typeof scaricaVenditeDalCloud === "function") scaricaVenditeDalCloud();
+        if (typeof scaricaMovimentiDalCloud === "function") scaricaMovimentiDalCloud();
     }
 }, 60000);
 
@@ -3198,16 +3447,6 @@ const btnEsciCassa = document.querySelector('.tasto-fisico img[src*="esci.png"]'
 btnEsciCassa.onclick = function () {
     apriModale('modal-menu-principale');
 };
-
-// Aggiorna lo stato internet anche nel footer del menu
-window.addEventListener('online', () => {
-    document.getElementById('menu-status-web').textContent = "🟢 ONLINE";
-    document.getElementById('menu-status-web').style.color = "#00cc66";
-});
-window.addEventListener('offline', () => {
-    document.getElementById('menu-status-web').textContent = "🔴 OFFLINE";
-    document.getElementById('menu-status-web').style.color = "#ff4d4d";
-});
 
 // Ascoltatori di eventi integrati nel browser per la rete
 window.addEventListener('online', aggiornaStatoRete);
