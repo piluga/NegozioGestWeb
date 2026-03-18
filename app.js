@@ -599,6 +599,20 @@ let clienteManualeScelto = null;
 if (btnPreferiti) {
     btnPreferiti.addEventListener('click', function () {
         inPuntiCliente.value = ''; inPuntiValore.value = ''; inPuntiData.value = getOggiString(); boxManInfo.style.display = 'none'; clienteManualeScelto = null;
+
+        // --- NOVITÀ: Carica le categorie dinamiche dal Database ---
+        let selectCat = document.getElementById('man-punti-categoria');
+        if (selectCat) {
+            selectCat.innerHTML = '<option value="DIRETTO">Assegnazione Esatta (Nessun Calcolo)</option>';
+            let regoleSalvate = localStorage.getItem('crm_soglie_punti');
+            let regole = regoleSalvate ? JSON.parse(regoleSalvate) : { "CBD": 1, "PM": 1, "HHC": 0.5, "DEFAULT": 0.25 };
+            for (let cat in regole) {
+                let label = cat === "DEFAULT" ? "TUTTO IL RESTO (DEFAULT)" : cat;
+                selectCat.innerHTML += `<option value="${cat}">${label} (Moltiplica x${regole[cat]})</option>`;
+            }
+        }
+        // ----------------------------------------------------------
+
         apriModale('modal-punti-manuali'); setTimeout(() => inPuntiCliente.focus(), 100);
     });
 }
@@ -622,10 +636,28 @@ async function cercaClientePerPuntiManuali(valore) {
 }
 
 window.applicaPuntiManuali = async function (azione) {
-    let valoreString = inPuntiValore.value.trim().replace(',', '.'); let puntiDaverificare = parseFloat(valoreString);
+    let valoreString = inPuntiValore.value.trim().replace(',', '.');
+    let valoreInserito = parseFloat(valoreString);
+
     if (!clienteManualeScelto) { mostraAvvisoModale("Seleziona prima un cliente valido!"); return; }
-    if (isNaN(puntiDaverificare) || puntiDaverificare <= 0) { mostraAvvisoModale("Inserisci una quantità di punti valida!"); return; }
+    if (isNaN(valoreInserito) || valoreInserito <= 0) { mostraAvvisoModale("Inserisci un valore numerico valido!"); return; }
     if (!inPuntiData.value) { mostraAvvisoModale("Seleziona una data!"); return; }
+
+    // --- NOVITÀ: Calcolo Dinamico dei Punti in base alla Categoria ---
+    let catSelezionata = document.getElementById('man-punti-categoria') ? document.getElementById('man-punti-categoria').value : "DIRETTO";
+    let moltiplicatore = 1; // Default per assegnazione esatta
+
+    if (catSelezionata !== "DIRETTO") {
+        let regoleSalvate = localStorage.getItem('crm_soglie_punti');
+        let regole = regoleSalvate ? JSON.parse(regoleSalvate) : { "CBD": 1, "PM": 1, "HHC": 0.5, "DEFAULT": 0.25 };
+        if (regole[catSelezionata] !== undefined) {
+            moltiplicatore = parseFloat(regole[catSelezionata]);
+        }
+    }
+
+    // Calcola i punti effettivi e arrotonda a 2 decimali
+    let puntiDaverificare = parseFloat((valoreInserito * moltiplicatore).toFixed(2));
+    // -----------------------------------------------------------------
 
     let puntiDaApplicare = azione === 'SOTTRAI' ? puntiDaverificare * -1 : puntiDaverificare;
     if (azione === 'SOTTRAI' && (clienteManualeScelto.punti + puntiDaApplicare) < 0) { mostraAvvisoModale("Il cliente non ha abbastanza punti da scaricare!"); return; }
@@ -641,11 +673,9 @@ window.applicaPuntiManuali = async function (azione) {
     let puntiCaric = azione === 'CARICA' ? puntiDaverificare : 0;
     let puntiScaric = azione === 'SOTTRAI' ? puntiDaverificare : 0;
 
-    // Aggiorna solo il saldo totale, il messaggio lo invierà il pulsante "Notifica App"
     aggiornaFidelityFirebase(clienteManualeScelto.scheda, clienteManualeScelto.punti, inPuntiData.value);
 
     let d = new Date();
-    let catSelezionata = document.getElementById('man-punti-categoria') ? document.getElementById('man-punti-categoria').value : "SISTEMA";
     let recordPunti = { CLIENTE: clienteManualeScelto.nome, GIORNO: inPuntiData.value, ORA: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`, CONTANTI: 0, POS: 0, PUNTI_CARICATI: puntiCaric, PUNTI_SCARICATI: puntiScaric, BONUS: 0, SALDO_PUNTI_INIZIALE: saldoIniz, SALDO_PUNTI_FINALE: clienteManualeScelto.punti, ARTICOLI: [{ CODICE: "PUNTI", ARTICOLO: "MOVIMENTO MANUALE PUNTI", DESCRIZIONE: azione, TIPO: "PTS", IMPORTO: 0, QUANTITA: 1, CATEGORIA: catSelezionata }] };
     await salvaVendita(recordPunti);
 
@@ -3379,11 +3409,20 @@ window.inviaMessaggioChatApp = async function () {
 // ==========================================
 // ☁️ CLOUD-SYNC: STORICO VENDITE E MOVIMENTI (BACKUP TOTALE)
 // ==========================================
-window.salvaVenditaCloud = async function (vendita) {
-    if (!navigator.onLine || !FIREBASE_URL) return;
-    const url = `${FIREBASE_URL}/storico_vendite/${vendita.id}.json`;
-    try { await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(vendita) }); } catch (e) { }
-};
+function salvaVendita(recordVendita) {
+    return new Promise((resolve) => {
+        // --- NOVITÀ: Genera un ID temporale indistruttibile se manca ---
+        if (!recordVendita.id) recordVendita.id = Date.now();
+        // ---------------------------------------------------------------
+
+        let tx = db.transaction('vendite', 'readwrite');
+        tx.objectStore('vendite').put(recordVendita); // 🚀 Evita duplicati in caso di ripristino
+        tx.oncomplete = () => {
+            if (typeof salvaVenditaCloud === "function") salvaVenditaCloud(recordVendita); // 🚀 Push al Cloud
+            resolve();
+        };
+    });
+}
 
 window.salvaMovimentoCloud = async function (movimento) {
     if (!navigator.onLine || !FIREBASE_URL) return;
