@@ -18,13 +18,15 @@
             <div class="modal-titolo" style="color: #00ffcc; font-size: 3vh;">ACCESSO RISERVATO</div>
             <p style="color: #b3d9ff; font-size: 1.8vh; margin-bottom: 25px;">Inserisci il PIN per sbloccare il gestionale</p>
 
-            <div class="crm-form-group">
-                <input type="password" id="login-pin" class="crm-input" placeholder="•••••" inputmode="numeric" style="text-align: center; font-size: 4vh; letter-spacing: 10px; height: 70px;">
-            </div>
+            <form onsubmit="event.preventDefault(); sbloccaApp();">
+                <div class="crm-form-group">
+                    <input type="password" id="login-pin" class="crm-input" placeholder="•••••" inputmode="numeric" autocomplete="current-password" style="text-align: center; font-size: 4vh; letter-spacing: 10px; height: 70px;">
+                </div>
 
-            <div class="modal-bottoniera" style="margin-top: 30px;">
-                <button class="btn-modal btn-verde" style="width: 100%; font-size: 2.2vh; padding: 15px;" onclick="sbloccaApp()">SBLOCCA CASSA 🔓</button>
-            </div>
+                <div class="modal-bottoniera" style="margin-top: 30px;">
+                    <button type="submit" class="btn-modal btn-verde" style="width: 100%; font-size: 2.2vh; padding: 15px;">SBLOCCA CASSA 🔓</button>
+                </div>
+            </form>
         </div>
     </div>
 
