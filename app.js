@@ -727,7 +727,9 @@ window.inviaWhatsApp = function () {
     if (!telClienteAttuale) return;
     let num = telClienteAttuale.replace(/[^0-9]/g, '');
     if (num.length <= 10 && !num.startsWith('39')) num = '39' + num;
-    window.open(`https://wa.me/${num}?text=${encodeURIComponent(msgDaInviarePlain)}`, '_blank');
+    
+    let url = `whatsapp://send?phone=${num}&text=${encodeURIComponent(msgDaInviarePlain)}`;
+    window.location.href = url;
 };
 
 window.inviaTelegram = function () {
