@@ -13,7 +13,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
 // 🗄️ DATABASE INDEXEDDB
 const DB_NAME = 'CassaPWA_DB';
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 let db;
 
 function initDB() {
