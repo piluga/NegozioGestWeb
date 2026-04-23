@@ -135,6 +135,7 @@ const areaDati = document.getElementById('area-dati-tabella');
 const campoSconto = document.getElementById('campo-sconto');
 const campoPagamento = document.getElementById('campo-pagamento');
 const campoScheda = document.getElementById('campo-scheda');
+const cassavoucherinput = document.getElementById('cassa-voucher-input');
 const campoBarcode = document.getElementById('campo-barcode');
 const listaRicerca = document.getElementById('lista-ricerca');
 const btnAnnullaSconto = document.getElementById('btn-annulla-sconto');
@@ -769,7 +770,7 @@ function evidenziaVoce(elementi) { elementi.forEach(el => el.classList.remove('v
 
 document.querySelectorAll('.opt-sconto').forEach(opt => { opt.addEventListener('click', function () { percentualeSconto = parseInt(this.getAttribute('data-sconto')); campoSconto.value = "- " + percentualeSconto + "%"; campoSconto.style.color = "#cc0000"; btnAnnullaSconto.style.display = "block"; aggiornaSchermo(); }); }); btnAnnullaSconto.addEventListener('click', function () { percentualeSconto = 0; campoSconto.value = ""; campoSconto.style.color = "#000033"; this.style.display = "none"; aggiornaSchermo(); }); document.querySelectorAll('.opt-pagamento').forEach(opt => { opt.addEventListener('click', function () { campoPagamento.value = this.textContent; barraDestra.textContent = this.getAttribute('data-icona'); }); });
 
-if (btnCestino) { btnCestino.addEventListener('click', function () { areaDati.innerHTML = ''; carrello = []; clienteAttivo = null; totaleLordo = 0; totaleNettoAttuale = 0; percentualeSconto = 0; campoSconto.value = ''; campoSconto.style.color = "#000033"; btnAnnullaSconto.style.display = "none"; campoPagamento.value = ''; campoScheda.value = ''; campoBarcode.value = ''; barraDestra.textContent = ''; listaRicerca.style.display = 'none'; barraCliente.style.display = 'none'; barraCentro.style.display = 'block'; mostraMessaggio("CASSA PRONTA"); aggiornaSchermo(); aggiornaContatori(); campoBarcode.focus(); }); }
+if (btnCestino) { btnCestino.addEventListener('click', function () { areaDati.innerHTML = ''; carrello = []; clienteAttivo = null; totaleLordo = 0; totaleNettoAttuale = 0; percentualeSconto = 0; campoSconto.value = ''; campoSconto.style.color = "#000033"; btnAnnullaSconto.style.display = "none"; campoPagamento.value = ''; campoScheda.value = ''; cassavoucherinput.value = ''; campoBarcode.value = ''; barraDestra.textContent = ''; listaRicerca.style.display = 'none'; barraCliente.style.display = 'none'; barraCentro.style.display = 'block'; mostraMessaggio("CASSA PRONTA"); aggiornaSchermo(); aggiornaContatori(); campoBarcode.focus(); }); }
 
 
 // 🌟 GESTIONE PREFERITI (PUNTI MANUALI)
